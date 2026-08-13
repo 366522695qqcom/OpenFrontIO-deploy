@@ -145,6 +145,41 @@ npm run dev:prod
 - `/src/server` - Backend game server
 - `/resources` - Static assets (images, maps, etc.)
 
+## ☁️ Deploying the static frontend to Vercel
+
+This repo is preconfigured for a static (frontend-only) deployment on Vercel via
+[`vercel.json`](vercel.json). The static build is a **landing/showcase** deployment:
+live multiplayer is served by the project's own backend at `openfront.io`, so
+multiplayer features are limited on a third-party static host (see the note at
+the end of this section).
+
+**What `vercel.json` does**
+
+- `framework: null` — disables framework auto-detection so our build runs as-is.
+- `installCommand: npm install --ignore-scripts` — avoids `husky` and native
+  (`canvas`) build steps in CI.
+- `buildCommand: bash scripts/vercel-build.sh` — builds with Vite, then
+  `scripts/prerender-static.js` bakes the EJS locals into `static/index.html`
+  (pointing `jwtAudience`/`serverHost` at `openfront.io`), then drops the
+  on-demand map binaries (≈500MB) so the output stays under Vercel's 100MB
+  static limit.
+- `outputDirectory: static` — Vercel serves this folder.
+- `rewrites` — a catch-all SPA rewrite to `index.html`.
+
+**Deploy steps**
+
+1. Push this repo to your GitHub account.
+2. In [Vercel](https://vercel.com): **Add New Project → Import** the repository.
+3. Framework Preset: **Other** (the `vercel.json` values take precedence).
+4. Click **Deploy**.
+
+> **Limitation:** `api.openfront.io` only allows CORS from `https://openfront.io`,
+> and several gameplay calls use same-origin relative URLs. On a third-party
+> static host, in-browser API calls and game/lobby connections are therefore
+> blocked. To run the full game (create/join/play), deploy the complete backend
+> (Express + workers, e.g. via the included `Dockerfile`) instead of the static
+> frontend.
+
 ## 🤝 Contributing
 
 Contributions and translations are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, the approved-issue process, project governance, and translation info.
