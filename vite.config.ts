@@ -319,9 +319,18 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: (id) => {
-            const vendorModules = ["howler", "zod"];
-            if (vendorModules.some((module) => id.includes(module))) {
+            // Split heavy, rarely-changing third-party libraries out of the
+            // main entry chunk. This shrinks the critical bundle that must be
+            // parsed/executed before first paint and lets these stable chunks
+            // be cached independently across releases.
+            if (id.includes("howler") || id.includes("zod")) {
               return "vendor";
+            }
+            if (id.includes("/d3-") || id.includes("d3-interpolate")) {
+              return "d3";
+            }
+            if (id.includes("intl-messageformat")) {
+              return "i18n";
             }
           },
         },

@@ -195,8 +195,10 @@ export function joinLobby(
           if (startingModal) {
             startingModal.classList.add("hidden");
           }
-          // No GPU-accelerated WebGL2: gate with an actionable message rather
-          // than the generic crash modal (the game would crawl at ~1fps).
+          // Both the GPU (WebGL2) and CPU (Canvas2D) backends failed to
+          // construct — GLUnavailableError now only escapes MapRenderer when
+          // even the Canvas2D context is unavailable. Gate with an actionable
+          // message rather than the generic crash modal.
           if (e instanceof GLUnavailableError) {
             showGLGate(e.glStatus);
             return;
@@ -296,6 +298,7 @@ function createWebGLView(
   terrainMap: TerrainMapData,
   config: Config,
   settings: RenderSettings,
+  forceCpu: boolean,
 ): {
   view: MapRenderer;
   glCanvas: HTMLCanvasElement;
@@ -368,8 +371,13 @@ function createWebGLView(
       settings,
       captureRaf,
       captureCaf,
+      forceCpu,
     );
   } catch (e) {
+    // Reaches here only when BOTH backends failed: MapRenderer falls back to
+    // CanvasRenderer on GPU failure, so this catch fires only if the Canvas2D
+    // context is also unavailable (GLUnavailableError("unsupported", ...) from
+    // CanvasRenderer).
     if (e instanceof GLUnavailableError) {
       trackGLInit(e.glStatus, e.renderer);
     }
@@ -380,7 +388,12 @@ function createWebGLView(
   }
   // Fingerprint-capped context (#4357): the game runs, but the map may render
   // with black areas. Warn with fix instructions; the player can continue.
-  if (view.glLimited) {
+  // On the CPU backend there is no texture-size limit, so glLimited is null.
+  if (view.backend === "cpu") {
+    // CPU fallback active (forced by setting or WebGL2 unavailable). Reuse the
+    // existing "software" analytics status rather than introducing a new value.
+    trackGLInit("software", "cpu-fallback");
+  } else if (view.glLimited) {
     trackGLInit(
       "limited",
       view.glLimited.renderer,
@@ -390,6 +403,17 @@ function createWebGLView(
   } else {
     trackGLInit("ok", "");
   }
+
+  // Tiny non-blocking backend indicator (bottom-left) so the active renderer is
+  // visible at a glance. Removed when the renderer is disposed.
+  const badge = document.createElement("div");
+  badge.id = "renderer-backend-badge";
+  badge.textContent = view.backend === "cpu" ? "CPU" : "GPU";
+  badge.style.cssText =
+    "position:fixed;bottom:8px;left:8px;z-index:9999;padding:2px 8px;" +
+    "border-radius:4px;background:rgba(0,0,0,0.6);color:#fff;" +
+    "font:11px/1.4 monospace;pointer-events:none;";
+  document.body.appendChild(badge);
 
   (window as unknown as { __webglView?: unknown }).__webglView = view;
 
@@ -590,6 +614,7 @@ async function createClientGame(
       gameMap,
       config,
       resolveRenderSettings(),
+      userSettings.forceCpuRender(),
     );
 
     const graphicsListenerAbort = new AbortController();
@@ -708,6 +733,7 @@ async function createClientGame(
       view.dispose();
       glCanvas.remove();
       inputOverlay.remove();
+      document.getElementById("renderer-backend-badge")?.remove();
     };
 
     console.log(

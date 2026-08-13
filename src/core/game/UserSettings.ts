@@ -69,6 +69,7 @@ export const KEYBINDS_KEY = "settings.keybinds";
 export const GRAPHICS_KEY = "settings.graphics";
 export const GRAPHICS_PRESETS_KEY = "settings.graphicsPresets";
 export const EFFECTS_KEY = "settings.effects";
+export const FORCE_CPU_RENDER_KEY = "settings.forceCpuRender";
 // Keep the existing storage key so the rename does not reset saved columns.
 export const PLAYER_STATS_COLUMNS_KEY = "settings.leaderboardColumns";
 export const TEAM_STATS_COLUMNS_KEY = "settings.teamStatsColumns";
@@ -493,6 +494,16 @@ export class UserSettings {
   // preset UI — used to run the legacy-overrides migration exactly once.
   hasGraphicsPresets(): boolean {
     return this.getString(GRAPHICS_PRESETS_KEY, "") !== "";
+  }
+
+  // Force the CPU (Canvas2D) renderer backend regardless of WebGL2
+  // availability — opt-in escape hatch for environments without GPU
+  // acceleration.
+  public forceCpuRender(): boolean {
+    return this.getBool(FORCE_CPU_RENDER_KEY, false);
+  }
+  public setForceCpuRender(value: boolean): void {
+    this.setBool(FORCE_CPU_RENDER_KEY, value);
   }
 
   // In case localStorage was manually edited to be invalid, return an empty object

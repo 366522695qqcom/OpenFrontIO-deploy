@@ -312,6 +312,10 @@ export class UserSettingModal extends BaseModal {
     this.userSettings.togglePerformanceOverlay();
   }
 
+  private toggleForceCpuRender() {
+    this.userSettings.setForceCpuRender(!this.userSettings.forceCpuRender());
+  }
+
   protected modalConfig() {
     return {
       tabs: [
@@ -848,6 +852,15 @@ export class UserSettingModal extends BaseModal {
         id="performance-overlay-toggle"
         .checked=${this.userSettings.performanceOverlay()}
         @change=${this.togglePerformanceOverlay}
+      ></setting-toggle>
+
+      <!-- 🖥️ Force CPU rendering -->
+      <setting-toggle
+        label="Force CPU rendering"
+        description="Use the Canvas2D CPU backend even when GPU acceleration is available (lower performance; useful for testing or GPU-less environments)."
+        id="force-cpu-render-toggle"
+        .checked=${this.userSettings.forceCpuRender()}
+        @change=${this.toggleForceCpuRender}
       ></setting-toggle>
 
       <!-- ⚔️ Attack Ratio -->

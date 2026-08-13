@@ -140,3 +140,60 @@ export function showGLGate(status: WebGLGateStatus): void {
     document.body.appendChild(gate);
   });
 }
+
+/**
+ * Backend selection result: either a GPU-accelerated WebGL2 context or a CPU
+ * fallback. Unlike {@link initGL} this never throws — a non-accelerated /
+ * missing context is reported as `backend: "cpu"` so the caller can fall back
+ * to the Canvas2D renderer. `forced` is used when the user opted into CPU
+ * rendering via a setting (no GL probing is done in that case).
+ */
+export type BackendChoice =
+  | {
+      backend: "gpu";
+      gl: WebGL2RenderingContext;
+      status: "ok" | "limited";
+      renderer: string;
+      maxTextureSize?: number;
+    }
+  | {
+      backend: "cpu";
+      status: "software" | "unsupported" | "forced";
+      renderer: string;
+    };
+
+/**
+ * Decide between the GPU (WebGL2) and CPU (Canvas2D) renderer backends without
+ * throwing. When `forceCpu` is true the GL context is never probed. Otherwise
+ * {@link initGL} is run; a `null` gl (software/missing) or a forced CPU path
+ * yields `backend: "cpu"`, while an accelerated (ok/limited) context yields
+ * `backend: "gpu"`.
+ */
+export function chooseBackend(
+  canvas: HTMLCanvasElement,
+  attrs: WebGLContextAttributes = {},
+  forceCpu = false,
+): BackendChoice {
+  if (forceCpu) {
+    return { backend: "cpu", status: "forced", renderer: "forced-by-setting" };
+  }
+  const res = initGL(canvas, attrs);
+  if (res.gl === null) {
+    return { backend: "cpu", status: res.status, renderer: res.renderer };
+  }
+  if (res.status === "limited") {
+    return {
+      backend: "gpu",
+      gl: res.gl,
+      status: "limited",
+      renderer: res.renderer,
+      maxTextureSize: res.maxTextureSize,
+    };
+  }
+  return {
+    backend: "gpu",
+    gl: res.gl,
+    status: "ok",
+    renderer: readRenderer(res.gl),
+  };
+}

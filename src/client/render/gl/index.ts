@@ -1,9 +1,16 @@
 export type { AttackRingInput } from "../types";
 // createDebugGui is intentionally not re-exported here — it pulls lil-gui and
 // the debug GUI into the main bundle; dynamically import "./debug/index".
+export type { RendererBackend } from "../canvas/RendererBackend";
 export { GraphicsOverridesSchema } from "./GraphicsOverrides";
 export type { GraphicsOverrides, GraphicsPresets } from "./GraphicsOverrides";
-export { GLUnavailableError, showGLGate, trackGLInit } from "./initGL";
+export {
+  GLUnavailableError,
+  chooseBackend,
+  showGLGate,
+  trackGLInit,
+} from "./initGL";
+export type { BackendChoice } from "./initGL";
 export { MapRenderer } from "./MapRenderer";
 export { preloadAtlasData } from "./passes/name-pass/AtlasData";
 export type { SpawnCenter } from "./passes/SpawnOverlayPass";

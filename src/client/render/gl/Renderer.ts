@@ -11,6 +11,7 @@
 
 import type { Config } from "../../../core/configuration/Config";
 import type { MapLayer } from "../../../core/game/TerrainMapLoader";
+import type { RendererBackend } from "../canvas/RendererBackend";
 import type { SpiralRibbon } from "../frame/SpiralTrails";
 import type {
   AttackRingInput,
@@ -102,7 +103,7 @@ const SAM_RADIUS_HIGHLIGHT_TYPES = new Set([
 
 const GRID_VIEW_KEY = "renderer:grid_view_enabled";
 
-export class GPURenderer {
+export class GPURenderer implements RendererBackend {
   private gl: WebGL2RenderingContext;
   private camera: Camera;
   private res: GPUResources;

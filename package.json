@@ -57,7 +57,7 @@
     "@types/hammerjs": "^2.0.46",
     "@types/howler": "^2.2.12",
     "@types/msgpack5": "^3.4.6",
-    "@types/node": "^24.12.0",
+    "@types/node": "^24.13.3",
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.5",
@@ -87,7 +87,7 @@
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.16",
     "vite-plugin-html": "^3.2.2",
-    "vitest": "^4.1.5",
+    "vitest": "^4.1.10",
     "vitest-canvas-mock": "^1.1.4"
   },
   "dependencies": {

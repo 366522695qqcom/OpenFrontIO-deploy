@@ -13,6 +13,8 @@
 
 import type { Config } from "../../../core/configuration/Config";
 import type { MapLayer } from "../../../core/game/TerrainMapLoader";
+import { CanvasRenderer } from "../canvas/CanvasRenderer";
+import type { RendererBackend } from "../canvas/RendererBackend";
 import type { SpiralRibbon } from "../frame/SpiralTrails";
 import type {
   AttackRingInput,
@@ -29,13 +31,14 @@ import type {
   RendererConfig,
   UnitState,
 } from "../types";
+import { chooseBackend, GLUnavailableError } from "./initGL";
 import type { SpawnCenter } from "./passes/SpawnOverlayPass";
 import type { AttackTroopLabel } from "./passes/WorldTextPass";
 import { GPURenderer } from "./Renderer";
 import type { RenderSettings } from "./RenderSettings";
 
 export class MapRenderer {
-  private renderer: GPURenderer | null = null;
+  private renderer: RendererBackend | null = null;
   private resizeObs: ResizeObserver | null = null;
   // Stored layer data for context-restore re-creation.
   private storedLayers: MapLayer[] = [];
@@ -43,11 +46,14 @@ export class MapRenderer {
   // Layer state that survives context loss (GPU textures do not).
   private layerVisibility = new Map<string, boolean>();
   private layerDestroyedMasks = new Map<string, Uint8Array>();
+  // Active backend ("gpu" = WebGL2, "cpu" = Canvas2D fallback).
+  private backendType: "gpu" | "cpu" = "gpu";
 
   /**
    * Called after a lost WebGL context is restored and the renderer has been
    * recreated. The owner must re-upload all simulation state (textures and
-   * geometry are gone).
+   * geometry are gone). Only fires on the GPU backend — Canvas2D has no
+   * context-loss concept.
    */
   onContextRestored: (() => void) | null = null;
 
@@ -66,6 +72,9 @@ export class MapRenderer {
     private settings: RenderSettings,
     private raf?: typeof requestAnimationFrame,
     private caf?: typeof cancelAnimationFrame,
+    // Force the CPU (Canvas2D) backend regardless of GL availability — opt-in
+    // via the user setting. Skips GL probing entirely.
+    private forceCpu: boolean = false,
   ) {
     this.initRenderer();
 
@@ -77,28 +86,83 @@ export class MapRenderer {
     });
     this.resizeObs.observe(canvas);
 
-    canvas.addEventListener("webglcontextlost", this.handleContextLost, false);
-    canvas.addEventListener(
-      "webglcontextrestored",
-      this.handleContextRestored,
-      false,
-    );
+    // Context-loss only applies to the WebGL2 backend. Canvas2D has no
+    // equivalent event, so the listeners (and the restore re-upload flow) are
+    // GPU-only.
+    if (this.backendType === "gpu") {
+      canvas.addEventListener(
+        "webglcontextlost",
+        this.handleContextLost,
+        false,
+      );
+      canvas.addEventListener(
+        "webglcontextrestored",
+        this.handleContextRestored,
+        false,
+      );
+    }
+  }
+
+  /** Active backend: "gpu" (WebGL2) or "cpu" (Canvas2D fallback). */
+  get backend(): "gpu" | "cpu" {
+    return this.backendType;
   }
 
   private initRenderer = () => {
-    this.renderer = new GPURenderer(
+    const choice = chooseBackend(
       this.canvas,
-      this.header,
-      this.terrainSource,
-      this.paletteData,
-      this.config,
-      this.settings,
-      this.raf,
-      this.caf,
+      { alpha: false, antialias: false, powerPreference: "high-performance" },
+      this.forceCpu,
     );
+    if (choice.backend === "cpu") {
+      this.backendType = "cpu";
+      this.renderer = new CanvasRenderer(
+        this.canvas,
+        this.header,
+        this.terrainSource,
+        this.paletteData,
+        this.config,
+        this.settings,
+        this.raf,
+        this.caf,
+      );
+    } else {
+      try {
+        this.renderer = new GPURenderer(
+          this.canvas,
+          this.header,
+          this.terrainSource,
+          this.paletteData,
+          this.config,
+          this.settings,
+          this.raf,
+          this.caf,
+        );
+        this.backendType = "gpu";
+      } catch (e) {
+        // chooseBackend reported an accelerated context, but GPURenderer still
+        // threw GLUnavailableError — fall back to the CPU renderer rather than
+        // gating the user.
+        if (e instanceof GLUnavailableError) {
+          this.backendType = "cpu";
+          this.renderer = new CanvasRenderer(
+            this.canvas,
+            this.header,
+            this.terrainSource,
+            this.paletteData,
+            this.config,
+            this.settings,
+            this.raf,
+            this.caf,
+          );
+        } else {
+          throw e;
+        }
+      }
+    }
 
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width > 0) this.renderer.resize(rect.width, rect.height);
+    if (rect.width > 0) this.renderer?.resize(rect.width, rect.height);
   };
 
   private handleContextLost = (e: Event) => {
@@ -110,6 +174,8 @@ export class MapRenderer {
   };
 
   private handleContextRestored = () => {
+    // Canvas2D has no context-loss concept; restore is GPU-only.
+    if (this.backendType === "cpu") return;
     this.initRenderer();
     // Re-apply stored layers to the new renderer.
     if (this.storedLayers.length > 0 && this.storedLayerImages.size > 0) {
@@ -130,6 +196,7 @@ export class MapRenderer {
    * Set when the context is hardware-accelerated but its MAX_TEXTURE_SIZE is
    * below what the game needs (fingerprinting protection, #4357). The game
    * runs, but the map may render with black areas — the owner should warn.
+   * Always null on the CPU backend.
    */
   get glLimited(): { renderer: string; maxTextureSize: number } | null {
     return this.renderer?.glLimited ?? null;

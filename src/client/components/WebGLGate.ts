@@ -78,6 +78,13 @@ const SAFARI_NOTES: string[] = [
  * to turn hardware acceleration / WebGL back on, or exempt the site from
  * fingerprinting protection, across the most popular browsers. Shown
  * imperatively from the game-start path.
+ *
+ * With the Canvas2D CPU-renderer fallback in place, the hard-block branches
+ * ("software" / "unsupported") are now a last resort: they share the
+ * "Rendering unavailable" title and only appear when the Canvas2D context is
+ * ALSO unavailable (i.e. both GPU and CPU rendering failed). The "limited"
+ * branch still fires independently on the GPU path (warns about black areas;
+ * the player may continue).
  */
 @customElement("webgl-gate")
 export class WebGLGate extends LitElement {
@@ -90,17 +97,12 @@ export class WebGLGate extends LitElement {
 
   render() {
     const limited = this.status === "limited";
-    const software = this.status === "software";
     const title = limited
       ? "Your browser is limiting WebGL"
-      : software
-        ? "Hardware acceleration is off"
-        : "WebGL2 not supported";
+      : "Rendering unavailable";
     const intro = limited
       ? 'A privacy setting is capping WebGL texture sizes below what the game needs, so the map may render with black areas. This is usually "resist fingerprinting" protection, which is on by default in some Firefox-based browsers. Here is how to exempt this site:'
-      : software
-        ? "Your browser is rendering without GPU acceleration, so the game can't run smoothly. Here is how to activate it across the most popular web browsers:"
-        : "Your browser doesn't support WebGL2, which this game requires. Here is how to enable it across the most popular web browsers:";
+      : "The game tried both GPU (WebGL2) and CPU (Canvas2D) rendering backends, but neither could start on this device. This usually means hardware acceleration is disabled AND the browser's Canvas2D context is also unavailable. Below are steps to re-enable hardware acceleration, which is the most reliable fix.";
     const sections = limited ? LIMITED_SECTIONS : STEP_SECTIONS;
     const notesTitle = limited ? "Notes" : "Safari";
     const notes = limited ? LIMITED_NOTES : SAFARI_NOTES;
