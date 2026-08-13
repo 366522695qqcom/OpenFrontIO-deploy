@@ -1,0 +1,78 @@
+{
+  "name": "openfront-client",
+  "scripts": {
+    "build-dev": "concurrently \"tsc --noEmit\" \"vite build --mode development\"",
+    "build-prod": "concurrently --kill-others-on-fail \"tsc --noEmit\" \"vite build\"",
+    "start:client": "vite",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "format": "prettier --ignore-unknown --write .",
+    "lint": "npm run lint:oxlint && npm run lint:eslint",
+    "lint:fix": "npm run lint:oxlint:fix && npm run lint:eslint:fix",
+    "lint:oxlint": "oxlint",
+    "lint:oxlint:fix": "oxlint --fix",
+    "lint:github": "oxlint --format=github && eslint --format gha",
+    "lint:eslint": "eslint",
+    "lint:eslint:fix": "eslint --fix",
+    "prepare": "husky",
+    "inst": "npm ci --ignore-scripts"
+  },
+  "lint-staged": {
+    "**/*.{js,mjs,cjs,ts,jsx,tsx}": [
+      "oxlint --fix",
+      "eslint --fix"
+    ],
+    "**/*": [
+      "prettier --ignore-unknown --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/compat": "^2.0.5",
+    "@eslint/js": "^10.0.1",
+    "@lit-labs/virtualizer": "^2.1.1",
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/d3": "^7.4.3",
+    "@types/hammerjs": "^2.0.46",
+    "@types/howler": "^2.2.12",
+    "@types/msgpack5": "^3.4.6",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/ui": "^4.1.5",
+    "concurrently": "^9.2.4",
+    "cross-env": "^10.1.0",
+    "d3": "^7.9.0",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-formatter-gha": "^2.0.1",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^16.4.0",
+    "lit": "^3.3.2",
+    "marked": "^18.0.5",
+    "mrmime": "^2.0.1",
+    "oxlint": "^1.75.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "prettier": "^3.8.3",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "prettier-plugin-sh": "^0.18.1",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1",
+    "vite": "^8.0.16",
+    "vite-plugin-html": "^3.2.2",
+    "vitest": "^4.1.10",
+    "vitest-canvas-mock": "^1.1.4"
+  },
+  "dependencies": {
+    "colord": "^2.9.3",
+    "dompurify": "^3.4.12",
+    "howler": "^2.2.4",
+    "intl-messageformat": "^11.2.3",
+    "jose": "^6.2.3",
+    "lil-gui": "^0.21.0",
+    "nanoid": "^5.1.11",
+    "zod": "^4.4.2"
+  },
+  "type": "module"
+}
