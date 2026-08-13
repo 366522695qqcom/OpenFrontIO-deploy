@@ -4,5 +4,15 @@
   "installCommand": "npm install --ignore-scripts",
   "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "static",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/w(\\d+)/api/(.*)",
+      "destination": "https://openfront.io/w$1/api/$2"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "https://openfront.io/api/$1"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
