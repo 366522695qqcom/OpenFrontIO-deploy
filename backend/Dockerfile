@@ -13,8 +13,10 @@ FROM node:24-slim AS build
 ENV HUSKY=0
 WORKDIR /app
 
-# git is required to fetch the frontend branch below.
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+# git + ca-certificates are required to fetch the frontend branch below
+# (without ca-certificates, git cannot verify GitHub's TLS certificate in the
+# slim base image).
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Backend dependencies (installs devDeps too, which include tsx for the runtime).
@@ -43,11 +45,14 @@ ENV NODE_ENV=production
 ENV PORT=10000
 ENV GAME_ENV=dev
 ENV NUM_WORKERS=2
+# Cloudflare's public test site key; required for the server to start but not a secret.
 ENV TURNSTILE_SITE_KEY=1x00000000000000000000AA
 ENV DOMAIN=openfront-backend.onrender.com
 ENV GIT_COMMIT=RENDER
-ENV API_KEY=WARNING_DEV_API_KEY_DO_NOT_USE_IN_PRODUCTION
-ENV ADMIN_BOT_API_KEY=WARNING_DEV_ADMIN_BOT_KEY_DO_NOT_USE_IN_PRODUCTION
+
+# ca-certificates so the server's outbound HTTPS (JWKS, privilege refresh) works.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
