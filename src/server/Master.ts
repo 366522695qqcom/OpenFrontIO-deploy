@@ -13,6 +13,10 @@ import { setNoStoreHeaders } from "./NoStoreHeaders";
 import { renderAppShell } from "./RenderHtml";
 import { ServerEnv } from "./ServerEnv";
 import { applyStaticAssetCacheControl } from "./StaticAssetCache";
+import {
+  createWorkerProxyMiddleware,
+  installWorkerUpgradeProxy,
+} from "./WorkerProxy";
 
 const playlist = new MapPlaylist();
 let lobbyService: MasterLobbyService;
@@ -24,6 +28,13 @@ const log = logger.child({ comp: "m" });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Act as a local nginx substitute: route /w{workerId} requests and
+// game-creation POSTs to the matching workers. This must be registered
+// before express.json(), otherwise the JSON body of create_game requests
+// would be consumed and never reach the worker.
+app.use(createWorkerProxyMiddleware(ServerEnv.numWorkers()));
+installWorkerUpgradeProxy(server, ServerEnv.numWorkers());
 
 app.use(express.json());
 
@@ -53,6 +64,17 @@ app.use(
         res.req.originalUrl,
       );
     },
+  }),
+);
+
+// Serve generated map binaries straight from resources/maps. In the split
+// repo the frontend build has no maps, so the asset manifest omits them and
+// the client falls back to the unhashed /maps/<map>/... URLs. Without this
+// route those requests would hit the SPA fallback and return HTML.
+app.use(
+  "/maps",
+  express.static(path.join(__dirname, "../../resources/maps"), {
+    maxAge: "1y",
   }),
 );
 
@@ -129,7 +151,9 @@ export async function startMaster() {
     );
   });
 
-  const PORT = 3000;
+  // PaaS platforms (Render, Fly.io, ...) inject a PORT env var and expect the
+  // web process to bind it. Fall back to 3000 for bare-metal/local runs.
+  const PORT = Number(process.env.PORT ?? 3000);
   server.listen(PORT, () => {
     log.info(`Master HTTP server listening on port ${PORT}`);
   });

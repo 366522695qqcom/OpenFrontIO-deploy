@@ -28,6 +28,7 @@
     "lint:eslint:fix": "eslint --fix",
     "prepare": "husky",
     "gen-maps": "cd map-generator && go run . && npm run format",
+    "sync-static": "bash scripts/sync-static.sh",
     "inst": "npm ci --ignore-scripts"
   },
   "lint-staged": {
