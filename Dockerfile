@@ -1,93 +1,62 @@
-# Use an official Node runtime as the base image
-FROM node:24-slim AS base
-WORKDIR /usr/src/app
+# OpenFront backend image (self-contained: builds the frontend, serves static + game).
+#
+# Adapted for Render's Metal builder:
+#   - No BuildKit `--mount=type=cache` (unsupported there).
+#   - Backend-only repo layout: the frontend lives in a separate branch, so the
+#     build stage clones it, builds the static bundle, and drops it into ./static.
+#   - The server runs directly via tsx (the master process reverse-proxies
+#     /w{id} and /api/create_game to the in-container workers), so nginx and
+#     supervisor are not needed.
 
-# Build stage - install ALL dependencies and build
-FROM base AS build
+FROM node:24-slim AS build
+
 ENV HUSKY=0
-# Copy package files first for better caching
-COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+WORKDIR /app
 
-# Copy only what's needed for build
-COPY tsconfig.json ./
-COPY vite.config.ts ./
-COPY eslint.config.js ./
-COPY index.html ./
-COPY resources ./resources
-COPY proprietary ./proprietary
-COPY src ./src
-
-ARG GIT_COMMIT=unknown
-ENV GIT_COMMIT="$GIT_COMMIT"
-RUN npm run build-prod
-
-# Production dependencies stage - separate from build
-FROM base AS prod-deps
-ENV HUSKY=0
-ENV NPM_CONFIG_IGNORE_SCRIPTS=1
-COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev
-
-# Final production image
-FROM base
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    nginx \
-    curl \
-    wget \
-    supervisor \
-    apache2-utils \
+# git is required to fetch the frontend branch below.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Update worker_connections in nginx.conf
-RUN sed -i 's/worker_connections [0-9]*/worker_connections 8192/' /etc/nginx/nginx.conf
-
-# Setup supervisor configuration
-RUN mkdir -p /var/log/supervisor
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-# Copy Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-RUN rm -f /etc/nginx/sites-enabled/default
-
-# Script that generates the create-game worker upstream at container start.
-COPY generate-nginx-upstream.sh /usr/local/bin/generate-nginx-upstream.sh
-RUN chmod +x /usr/local/bin/generate-nginx-upstream.sh
-
-# Copy production node_modules from prod-deps stage (cached separately from build)
-COPY --from=prod-deps /usr/src/app/node_modules ./node_modules
+# Backend dependencies (installs devDeps too, which include tsx for the runtime).
 COPY package*.json ./
+RUN npm ci --ignore-scripts
 
-# Copy built artifacts from build stage
-COPY --from=build /usr/src/app/static ./static
+# Build the frontend from the public `frontend` branch into ./static.
+RUN git clone --depth 1 -b frontend https://github.com/366522695qqcom/OpenFrontIO-deploy.git _fe \
+    && cd _fe \
+    && npm ci --ignore-scripts \
+    && npm run build-prod \
+    && cd /app \
+    && rm -rf static \
+    && cp -r _fe/static ./static \
+    && rm -rf _fe
 
-COPY resources ./resources
-
-# Remove maps because they are not used by the server.
-RUN rm -rf ./resources/maps
+# Backend source and resources (resources/maps are served at /maps by the master).
 COPY tsconfig.json ./
 COPY src ./src
+COPY resources ./resources
 
+# Runtime stage
+FROM node:24-slim
+ENV HUSKY=0
+ENV NODE_ENV=production
+ENV PORT=10000
+ENV GAME_ENV=dev
+ENV NUM_WORKERS=2
+ENV TURNSTILE_SITE_KEY=1x00000000000000000000AA
+ENV DOMAIN=openfront-backend.onrender.com
+ENV GIT_COMMIT=RENDER
+ENV API_KEY=WARNING_DEV_API_KEY_DO_NOT_USE_IN_PRODUCTION
+ENV ADMIN_BOT_API_KEY=WARNING_DEV_ADMIN_BOT_KEY_DO_NOT_USE_IN_PRODUCTION
 
-ARG GIT_COMMIT=unknown
-RUN echo "$GIT_COMMIT" > static/commit.txt
+WORKDIR /app
 
-ENV GIT_COMMIT="$GIT_COMMIT"
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/tsconfig.json ./tsconfig.json
+COPY --from=build /app/static ./static
+COPY --from=build /app/src ./src
+COPY --from=build /app/resources ./resources
 
-RUN <<'EOF' tee /usr/local/bin/start.sh
-#!/bin/sh
-# Generate the create-game nginx upstream from NUM_WORKERS before nginx starts.
-/usr/local/bin/generate-nginx-upstream.sh
-
-if [ "$DOMAIN" = openfront.dev ] && [ "$SUBDOMAIN" != main ]; then
-    exec timeout 25h /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-else
-    exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
-fi
-EOF
-RUN chmod +x /usr/local/bin/start.sh
-ENTRYPOINT ["/usr/local/bin/start.sh"]
+EXPOSE 10000
+CMD ["npx", "tsx", "src/server/Server.ts"]
