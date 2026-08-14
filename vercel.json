@@ -4,5 +4,11 @@
   "installCommand": "npm install --ignore-scripts",
   "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "static",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/api/:path*" },
+    { "source": "/w0/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/w0/api/:path*" },
+    { "source": "/w1/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/w1/api/:path*" },
+    { "source": "/maps/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/maps/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

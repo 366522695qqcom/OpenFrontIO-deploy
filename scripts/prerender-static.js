@@ -40,25 +40,25 @@ if (fs.existsSync(manifestPath)) {
 // is empty so asset URLs resolve to the hashed values in the manifest (which
 // are deployed alongside in static/_assets).
 //
-// Backend targeting: point the static frontend at the official openfront.io
-// backend. jwtAudience=openfront.io makes the client resolve the API base to
-// https://api.openfront.io (and the JWKS issuer likewise). serverHost=openfront.io
-// makes the game WebSocket target wss://openfront.io instead of the static
-// host (which has no backend). Note: the official API only allows CORS from
-// https://openfront.io, and numWorkers must match the official backend's
-// NUM_WORKERS for lobby routing — both are out of our control from a third-
-// party host, so the integration is best-effort. Override NUM_WORKERS via env
-// if the official worker count is known.
+// Backend targeting: the static frontend is hosted on a third-party static host
+// (e.g. Vercel) while the game backend runs elsewhere. serverHost points the
+// game WebSocket at the backend over TLS (wss), and jwtAudience makes the
+// client resolve the API base to https://api.<backendHost>. The backend's
+// /api, /w{id}/api and /maps routes must be reverse-proxied to the backend by
+// the static host (see vercel.json rewrites), because the client calls those
+// with same-origin relative URLs. Override with BACKEND_HOST / GAME_ENV.
+const backendHost =
+  process.env.BACKEND_HOST ?? "openfrontio-deploy-production.up.railway.app";
 const locals = {
   gitCommit: JSON.stringify("static"),
   assetManifest: JSON.stringify(assetManifest),
   cdnBase: JSON.stringify(""),
   cdnBaseRaw: "",
-  gameEnv: JSON.stringify("prod"),
+  gameEnv: JSON.stringify(process.env.GAME_ENV ?? "dev"),
   numWorkers: JSON.stringify(parseInt(process.env.NUM_WORKERS ?? "2", 10)),
   turnstileSiteKey: JSON.stringify("1x00000000000000000000AA"),
-  jwtAudience: JSON.stringify("openfront.io"),
-  serverHost: JSON.stringify("openfront.io"),
+  jwtAudience: JSON.stringify(backendHost),
+  serverHost: JSON.stringify(backendHost),
   instanceId: JSON.stringify("static"),
   manifestHref: assetManifest["manifest.json"] ?? "/manifest.json",
   faviconHref: assetManifest["images/Favicon.svg"] ?? "/images/Favicon.svg",
