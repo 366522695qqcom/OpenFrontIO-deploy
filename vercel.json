@@ -5,10 +5,18 @@
   "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "static",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/api/:path*" },
-    { "source": "/w0/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/w0/api/:path*" },
-    { "source": "/w1/api/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/w1/api/:path*" },
-    { "source": "/maps/:path*", "destination": "https://openfrontio-deploy-production.up.railway.app/maps/:path*" },
+    {
+      "source": "/w(\\d+)/api/(.*)",
+      "destination": "https://openfrontio-deploy-production.up.railway.app/w$1/api/$2"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "https://openfrontio-deploy-production.up.railway.app/api/$1"
+    },
+    {
+      "source": "/maps/(.*)",
+      "destination": "https://openfrontio-deploy-production.up.railway.app/maps/$1"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
