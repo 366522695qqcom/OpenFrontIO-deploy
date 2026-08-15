@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getApiBase, getAudience } from "../src/client/Api";
 import { ClientEnv } from "../src/client/ClientEnv";
 
-function setConfig(jwtAudience: string) {
+function setConfig(jwtAudience: string, apiBase?: string) {
   (window as any).BOOTSTRAP_CONFIG = {
     gameEnv: "prod",
     numWorkers: 1,
@@ -10,6 +10,7 @@ function setConfig(jwtAudience: string) {
     jwtAudience,
     instanceId: "desktop",
     gitCommit: "test",
+    apiBase,
   };
   ClientEnv.reset();
 }
@@ -50,5 +51,17 @@ describe("getAudience / getApiBase from BOOTSTRAP_CONFIG", () => {
     setConfig("openfront.io");
     expect(getAudience()).toBe("openfront.io");
     expect(getApiBase()).toBe("https://api.openfront.io");
+  });
+});
+
+describe("getApiBase with apiBase (self-hosted static deploy)", () => {
+  beforeEach(() => ClientEnv.reset());
+
+  it("targets https://<apiBase> instead of fabricating an api. sub-subdomain", () => {
+    setConfig("openfrontio-deploy-production.up.railway.app", "openfrontio-deploy-production.up.railway.app");
+    expect(getApiBase()).toBe(
+      "https://openfrontio-deploy-production.up.railway.app",
+    );
+    expect(ClientEnv.isSelfHosted()).toBe(true);
   });
 });
