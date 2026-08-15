@@ -4,6 +4,7 @@ import { z } from "zod";
 import { TokenPayload, TokenPayloadSchema } from "../core/ApiSchemas";
 import { base64urlToUuid } from "../core/Base64";
 import { getApiBase, getAudience } from "./Api";
+import { ClientEnv } from "./ClientEnv";
 import { crazyGamesSDK } from "./CrazyGamesSDK";
 import { steamSDK } from "./SteamSDK";
 import { generateCryptoRandomUUID } from "./Utils";
@@ -114,6 +115,11 @@ export async function isLoggedIn(): Promise<boolean> {
 export async function userAuth(
   shouldRefresh: boolean = true,
 ): Promise<UserAuth> {
+  // Self-hosted backends have no account API, so there is no JWT to refresh or
+  // verify. Short-circuit to a clean guest result (no network, no console noise).
+  if (ClientEnv.isSelfHosted()) {
+    return false;
+  }
   try {
     const jwt = __jwt;
     if (!jwt) {
@@ -179,6 +185,12 @@ export async function userAuth(
 }
 
 async function refreshJwt(): Promise<void> {
+  // Self-hosted backends have no account API; there is nothing to refresh.
+  // Clear any JWT and return without a failing request or console noise.
+  if (ClientEnv.isSelfHosted()) {
+    __jwt = null;
+    return;
+  }
   if (__refreshPromise) {
     return __refreshPromise;
   }

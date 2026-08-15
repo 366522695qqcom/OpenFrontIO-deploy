@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/client/ClientEnv", () => ({
-  ClientEnv: { jwtAudience: () => "localhost" },
+  ClientEnv: {
+    jwtAudience: () => "localhost",
+    // getApiBase() now consults apiBaseHost(); a non-self-hosted deploy has
+    // no apiBase, so return undefined/false.
+    apiBaseHost: () => undefined,
+    isSelfHosted: () => false,
+  },
 }));
 
 // fetchPlayerLeaderboard is unauthenticated; Auth is only mocked because

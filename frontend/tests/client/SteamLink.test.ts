@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/client/ClientEnv", () => ({
-  ClientEnv: { jwtAudience: () => "localhost" },
+  ClientEnv: {
+    jwtAudience: () => "localhost",
+    // getApiBase() and Auth.ts now consult these; a non-self-hosted
+    // (official/desktop) deploy has no apiBase, so return undefined/false.
+    apiBaseHost: () => undefined,
+    isSelfHosted: () => false,
+  },
 }));
 
 // redeemSteamLink is authenticated; Auth is only mocked because Api.ts

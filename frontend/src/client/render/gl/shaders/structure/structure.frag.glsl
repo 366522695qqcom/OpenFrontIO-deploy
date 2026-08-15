@@ -171,62 +171,47 @@ void main() {
     borderColor.a = 1.0;
   }
 
-  // structures cosmetic: while the owner's territory is hovered, recolor the
-  // fill with their effect (raw catalog colors, like trails — no darken). The
-  // border keeps the player color so ownership stays readable. Skipped for
-  // alt view and construction gray.
+  // structures cosmetic: while the owner's territory is hovered, tint the
+  // border ring with their effect color (raw catalog colors, like trails —
+  // no darken) and lightly blend into the icon interior so the detailed AI
+  // art stays readable. Skipped for alt view and construction gray.
+  vec3 effectColor = vec3(0.0);
   bool effectActive = false;
   if (uAltView == 0 && vUnderConstruction < 0.5) {
     int effOwner = int(vOwnerID + 0.5);
     if (effOwner == int(uHoverOwner + 0.5) && effOwner > 0) {
-      vec3 effectRGB;
-      if (structuresEffectColor(effOwner, effectRGB)) {
-        fillColor.rgb = effectRGB;
+      if (structuresEffectColor(effOwner, effectColor)) {
         effectActive = true;
       }
     }
   }
 
-  vec4 bgColor = mix(borderColor, fillColor, borderMask);
-
-  // Sample icon from atlas (white on transparent)
-  // Only show icon detail when zoomed in enough
-  float iconAlpha = 0.0;
-  if (vZoom > uDotsThreshold) {
-    // Clamp UV to this atlas column to prevent bleeding into neighbours
-    // when uIconFill shrinks the icon (expanding UV range beyond column).
+  // Sample the colored icon from the atlas (RGB content, opaque alpha).
+  // The image is clipped to its atlas column by inBounds (clamped pixels
+  // would otherwise repeat the edge) and to the shape interior by borderMask.
+  vec3 iconRGB = vec3(0.0);
+  {
     float colStart = vAtlasIdx / float(ATLAS_COLS);
     float colEnd = (vAtlasIdx + 1.0) / float(ATLAS_COLS);
     vec2 safeUV = vec2(clamp(vAtlasUV.x, colStart, colEnd), clamp(vAtlasUV.y, 0.0, 1.0));
-    vec4 iconSample = texture(uAtlas, safeUV);
-    // Zero out icon outside the valid UV region (clamped pixels would repeat the edge)
+    iconRGB = texture(uAtlas, safeUV).rgb;
     float inBounds = step(colStart, vAtlasUV.x) * step(vAtlasUV.x, colEnd)
                    * step(0.0, vAtlasUV.y) * step(vAtlasUV.y, 1.0);
-    // Clip to fill area so icon doesn't bleed into the border ring.
-    iconAlpha = iconSample.a * borderMask * inBounds;
+    iconRGB *= inBounds;
   }
+  // Fade the icon in smoothly as the camera zooms in (dot -> icon transition).
+  float iconFade = smoothstep(uDotsThreshold, uDotsThreshold + 0.2, vZoom);
 
-  // Composite: tinted icon over player-colored shape.
-  // Classic icons (uIconDarken > 0) tint the glyph with a darkened player
-  // color. When the shape itself is already dark, that darkened glyph blends
-  // into the shape (and the dark territory behind it) and becomes unreadable —
-  // so flip the glyph to the light icon color when the fill is too dark.
-  // While the structures effect is animating the fill, the flip becomes a
-  // smooth luminance fade so the glyph cross-fades instead of snapping;
-  // without the effect this is the classic hard threshold, pixel-identical
-  // to having no cosmetic equipped.
-  vec3 glyphColor = uIconColor;
-  if (uIconDarken > 0.0) {
-    float fillLum = dot(fillColor.rgb, vec3(0.299, 0.587, 0.114));
-    if (effectActive) {
-      float t = smoothstep(0.25, 0.45, fillLum); // 0 = dark fill → light glyph
-      glyphColor = mix(uIconColor, darken(fillColor.rgb, uIconDarken), t);
-    } else {
-      glyphColor =
-        fillLum < 0.25 ? uIconColor : darken(fillColor.rgb, uIconDarken);
-    }
+  // Interior: player-colored dot while zoomed out, detailed AI image once
+  // zoomed in. The border ring keeps the (darkened) player color so the
+  // structure's ownership stays readable at every zoom level.
+  vec3 interiorRGB = mix(fillColor.rgb, iconRGB, iconFade);
+  vec3 ringColor = borderColor.rgb;
+  if (effectActive) {
+    ringColor = mix(ringColor, effectColor, 0.7);
+    interiorRGB = mix(interiorRGB, effectColor, 0.25);
   }
-  vec3 finalRGB = mix(bgColor.rgb, glyphColor, iconAlpha);
+  vec3 finalRGB = mix(ringColor, interiorRGB, borderMask);
 
   // Red X overlay for units marked for deletion
   if (vMarkedForDeletion > 0.5) {
@@ -245,7 +230,7 @@ void main() {
   float tintActive = step(0.01, dot(uOutlineColor, uOutlineColor));
   finalRGB = mix(finalRGB, uOutlineColor, tintActive * 0.5);
 
-  float finalAlpha = bgColor.a * outerAlpha * uGhostAlpha * uIconAlpha;
+  float finalAlpha = outerAlpha * uGhostAlpha * uIconAlpha;
 
   // Build-button hover highlight: white outline on matching types, dim the rest
   if (uHighlightMask != 0) {

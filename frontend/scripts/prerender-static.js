@@ -44,13 +44,15 @@ if (fs.existsSync(manifestPath)) {
 // (Railway by default, override with BACKEND_HOST). jwtAudience=<host> makes
 // the client resolve the API base to https://api.<host> (and the JWKS issuer
 // likewise); serverHost=<host> makes the game WebSocket target
-// wss://<host>/w0. Game HTTP API + maps use same-origin paths proxied to the
-// backend by the Vercel project's external rewrites, so they carry no CORS.
-// The https://api.<host> account endpoints are expected to be unavailable on a
-// self-hosted backend and fail open (client has bundled fallbacks); they do
-// not block creating/joining/playing games. gameEnv and numWorkers must match
-// the backend's GAME_ENV/NUM_WORKERS for creation rate limits and lobby
-// routing.
+// wss://<host>/w0. apiBase=<host> is also baked to the backend host: when set,
+// account/config endpoints target https://<apiBase> directly instead of the
+// fabricated https://api.<host> sub-subdomain (which has no valid TLS cert on
+// self-hosted hosts) and are expected to fail open on a self-hosted backend
+// (client short-circuits to bundled fallbacks, no console noise). Game HTTP
+// API + maps use same-origin paths proxied to the backend by the Vercel
+// project's external rewrites, so they carry no CORS. They do not block
+// creating/joining/playing games. gameEnv and numWorkers must match the
+// backend's GAME_ENV/NUM_WORKERS for creation rate limits and lobby routing.
 const backendHost =
   process.env.BACKEND_HOST ?? "openfrontio-deploy-production.up.railway.app";
 const locals = {
@@ -63,6 +65,7 @@ const locals = {
   turnstileSiteKey: JSON.stringify("1x00000000000000000000AA"),
   jwtAudience: JSON.stringify(backendHost),
   serverHost: JSON.stringify(backendHost),
+  apiBase: JSON.stringify(backendHost),
   instanceId: JSON.stringify("static"),
   manifestHref: assetManifest["manifest.json"] ?? "/manifest.json",
   faviconHref: assetManifest["images/Favicon.svg"] ?? "/images/Favicon.svg",

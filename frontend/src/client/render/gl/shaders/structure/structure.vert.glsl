@@ -36,17 +36,18 @@ void main() {
   vZoom = uZoom;
   vAtlasIdx = aInst1.x;
 
-  float iconScale;
-  if (uZoom <= uDotsThreshold) {
-    iconScale = uDotScale;
-  } else if (uZoom >= uIconGrowZoom) {
-    // World-anchored: grow proportionally to zoom so the structure covers a
-    // fixed area of the map. Past this zoom, structures should feel like
-    // they're "on" the canvas rather than overlaid at constant pixel size.
-    iconScale = uZoom / uIconGrowZoom;
-  } else {
-    iconScale = min(1.0, uZoom / uScaleFactor);
-  }
+  // Smooth, continuous zoom scaling (no LOD jumps):
+  //   - far out:   small player-colored dot (uDotScale)
+  //   - mid zoom:  ramps up to the full icon via smoothstep
+  //   - close in:  holds at full icon size (constant screen px)
+  //   - very close: world-anchored, keeps growing with zoom so the structure
+  //                 reads as "on" the canvas at constant map size
+  float dotRamp = smoothstep(uDotsThreshold - 0.12, uDotsThreshold + 0.12, uZoom);
+  float dotToIcon = mix(uDotScale, 1.0, dotRamp);
+  float zoomed = uZoom / uScaleFactor;
+  float detail = min(1.0, max(dotToIcon, zoomed));
+  float worldGrow = uZoom / uIconGrowZoom;
+  float iconScale = max(detail, worldGrow);
 
   int shapeIdx = int(aInst1.x);
   float shapeScale = uShapeScales[shapeIdx];
