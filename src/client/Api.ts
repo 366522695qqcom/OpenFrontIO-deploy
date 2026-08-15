@@ -901,6 +901,15 @@ export async function createNextLobby(
 export function getApiBase() {
   const domainname = getAudience();
 
+  // Static/self-hosted deploys bake an explicit account-API host. Target it
+  // directly instead of fabricating an "api.<domainname>" sub-subdomain, which
+  // has no valid TLS certificate on self-hosted (e.g. Railway) hosts and turns
+  // every account/config call into ERR_CERT_COMMON_NAME_INVALID.
+  const apiBase = ClientEnv.apiBaseHost();
+  if (apiBase) {
+    return `https://${apiBase}`;
+  }
+
   if (domainname === "localhost") {
     const apiDomain = process.env.API_DOMAIN;
     if (apiDomain) {
@@ -1078,6 +1087,11 @@ export async function fetchTribeLeaderboard(): Promise<
 }
 
 export async function getNews(): Promise<NewsItem[]> {
+  // Self-hosted backends serve no /news.json; use the bundled fallback without
+  // a failing request or console noise.
+  if (ClientEnv.isSelfHosted()) {
+    return newsItemsFallback as NewsItem[];
+  }
   try {
     const res = await fetch(`${getApiBase()}/news.json`, {
       headers: { Accept: "application/json" },
@@ -1108,6 +1122,11 @@ async function getServedConfig<T>(
   schema: z.ZodType<T>,
   fallback: unknown,
 ): Promise<T> {
+  // Self-hosted backends serve no <name>.json; use the bundled fallback without
+  // a failing request or console noise.
+  if (ClientEnv.isSelfHosted()) {
+    return schema.parse(fallback);
+  }
   try {
     const res = await fetch(`${getApiBase()}/${name}`, {
       headers: { Accept: "application/json" },

@@ -45,6 +45,7 @@ export class ClientEnv {
       // Optional: only the desktop app injects an explicit game-server host.
       // Absent on the web build (falls back to same-origin window.location).
       serverHost: bc.serverHost,
+      apiBase: bc.apiBase,
     };
     return ClientEnv.values;
   }
@@ -73,6 +74,10 @@ export class ClientEnv {
   }
   static jwtIssuer(): string {
     const audience = ClientEnv.jwtAudience();
+    const apiBase = ClientEnv.apiBaseHost();
+    if (apiBase) {
+      return `https://${apiBase}`;
+    }
     return audience === "localhost"
       ? "http://localhost:8787"
       : `https://api.${audience}`;
@@ -110,6 +115,21 @@ export class ClientEnv {
   // Explicit game-server host, injected by the desktop app (absent on web).
   static serverHost(): string | undefined {
     return ClientEnv.get().serverHost;
+  }
+  // Static/self-hosted deploys bake an explicit account-API host (the backend
+  // itself). When set, account/config endpoints target https://<apiBase>
+  // rather than a fabricated "api.<audience>" sub-subdomain (which has no valid
+  // TLS certificate on Railway). Absent on the official web build and desktop
+  // app, which keep using https://api.<audience>.
+  static apiBaseHost(): string | undefined {
+    return ClientEnv.get().apiBase;
+  }
+  // True for static/self-hosted deploys that bake apiBase: such backends have
+  // no separate account API (auth/cosmetics/news/streams/leaderboard are
+  // unavailable), so callers short-circuit to bundled fallbacks without
+  // issuing requests or logging errors.
+  static isSelfHosted(): boolean {
+    return ClientEnv.apiBaseHost() !== undefined;
   }
   // Origin (scheme + host, no trailing slash) of the game server that hosts the
   // public-lobby and in-game WebSockets. The lobby-list and game sockets append
@@ -163,4 +183,5 @@ export interface ClientEnvValues {
   instanceId: string;
   gitCommit: string;
   serverHost?: string;
+  apiBase?: string;
 }
