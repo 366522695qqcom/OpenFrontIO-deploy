@@ -158,18 +158,11 @@ describe("GraphicsOverridesSchema", () => {
 });
 
 describe("applyGraphicsOverrides", () => {
-  test("with empty overrides applies default classic structure, otherwise matches createRenderSettings", () => {
+  test("with empty overrides matches createRenderSettings defaults", () => {
     const fromGen = gen({});
     const fromCreate = createRenderSettings();
-    // Classic icons are the default, so empty overrides still tune the
-    // structure slice (borderDarken/fillDarken/iconDarken/iconAlpha).
-    expect(fromGen.structure.borderDarken).toBe(0.7);
-    expect(fromGen.structure.fillDarken).toBe(1.0);
-    expect(fromGen.structure.iconDarken).toBe(0.3);
-    expect(fromGen.structure.iconAlpha).toBe(0.9);
-    // Everything outside the structure slice is left at createRenderSettings
-    // defaults.
-    fromCreate.structure = fromGen.structure;
+    // Classic icons are opt-in, so empty overrides leave the whole settings
+    // object (including the structure slice) at createRenderSettings defaults.
     expect(fromGen).toEqual(fromCreate);
   });
 
@@ -295,12 +288,13 @@ describe("applyGraphicsOverrides", () => {
     expect(off.iconAlpha).toBe(1);
   });
 
-  test("classicIcons absent → applies classic styling by default", () => {
+  test("classicIcons absent → keeps render-settings.json defaults (no classic styling)", () => {
+    const defaults = createRenderSettings().structure;
     const absent = gen({ structure: {} }).structure;
-    expect(absent.borderDarken).toBe(0.7);
-    expect(absent.fillDarken).toBe(1.0);
-    expect(absent.iconDarken).toBe(0.3);
-    expect(absent.iconAlpha).toBe(0.9);
+    expect(absent.borderDarken).toBe(defaults.borderDarken);
+    expect(absent.fillDarken).toBe(defaults.fillDarken);
+    expect(absent.iconDarken).toBe(0);
+    expect(absent.iconAlpha).toBe(1);
   });
 
   test("iconSize override sets structure.iconSize", () => {

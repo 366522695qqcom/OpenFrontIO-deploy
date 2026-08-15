@@ -41,6 +41,7 @@
     "concurrently": "^9.2.4",
     "cross-env": "^10.1.0",
     "d3": "^7.9.0",
+    "ejs": "^6.0.1",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-formatter-gha": "^2.0.1",

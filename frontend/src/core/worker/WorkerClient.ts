@@ -93,7 +93,7 @@ export class WorkerClient {
         id: messageId,
         gameStartInfo: this.gameStartInfo,
         clientID: this.clientID,
-        cdnBase: getCdnBase(),
+        cdnBase: getCdnBase() || window.location.origin,
       });
 
       setTimeout(() => {

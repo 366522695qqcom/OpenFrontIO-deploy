@@ -40,25 +40,29 @@ if (fs.existsSync(manifestPath)) {
 // is empty so asset URLs resolve to the hashed values in the manifest (which
 // are deployed alongside in static/_assets).
 //
-// Backend targeting: point the static frontend at the official openfront.io
-// backend. jwtAudience=openfront.io makes the client resolve the API base to
-// https://api.openfront.io (and the JWKS issuer likewise). serverHost=openfront.io
-// makes the game WebSocket target wss://openfront.io instead of the static
-// host (which has no backend). Note: the official API only allows CORS from
-// https://openfront.io, and numWorkers must match the official backend's
-// NUM_WORKERS for lobby routing — both are out of our control from a third-
-// party host, so the integration is best-effort. Override NUM_WORKERS via env
-// if the official worker count is known.
+// Backend targeting: point the static frontend at the self-hosted backend
+// (Railway by default, override with BACKEND_HOST). jwtAudience=<host> makes
+// the client resolve the API base to https://api.<host> (and the JWKS issuer
+// likewise); serverHost=<host> makes the game WebSocket target
+// wss://<host>/w0. Game HTTP API + maps use same-origin paths proxied to the
+// backend by the Vercel project's external rewrites, so they carry no CORS.
+// The https://api.<host> account endpoints are expected to be unavailable on a
+// self-hosted backend and fail open (client has bundled fallbacks); they do
+// not block creating/joining/playing games. gameEnv and numWorkers must match
+// the backend's GAME_ENV/NUM_WORKERS for creation rate limits and lobby
+// routing.
+const backendHost =
+  process.env.BACKEND_HOST ?? "openfrontio-deploy-production.up.railway.app";
 const locals = {
   gitCommit: JSON.stringify("static"),
   assetManifest: JSON.stringify(assetManifest),
   cdnBase: JSON.stringify(""),
   cdnBaseRaw: "",
-  gameEnv: JSON.stringify("prod"),
+  gameEnv: JSON.stringify(process.env.GAME_ENV ?? "dev"),
   numWorkers: JSON.stringify(parseInt(process.env.NUM_WORKERS ?? "2", 10)),
   turnstileSiteKey: JSON.stringify("1x00000000000000000000AA"),
-  jwtAudience: JSON.stringify("openfront.io"),
-  serverHost: JSON.stringify("openfront.io"),
+  jwtAudience: JSON.stringify(backendHost),
+  serverHost: JSON.stringify(backendHost),
   instanceId: JSON.stringify("static"),
   manifestHref: assetManifest["manifest.json"] ?? "/manifest.json",
   faviconHref: assetManifest["images/Favicon.svg"] ?? "/images/Favicon.svg",

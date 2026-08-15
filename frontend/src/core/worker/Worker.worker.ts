@@ -151,13 +151,25 @@ ctx.addEventListener("message", async (e: MessageEvent<MainThreadMessage>) => {
           message.clientID,
           mapLoader,
           gameUpdate,
-        ).then((gr) => {
-          sendMessage({
-            type: "initialized",
-            id: message.id,
-          } as InitializedMessage);
-          return gr;
-        });
+        )
+          .then((gr) => {
+            sendMessage({
+              type: "initialized",
+              id: message.id,
+            } as InitializedMessage);
+            return gr;
+          })
+          .catch((error) => {
+            // Without this the rejection is swallowed and "initialized" is
+            // never sent, so the main thread only sees a 60s timeout with no
+            // clue what went wrong. Surface the real error for debugging while
+            // keeping the promise rejected.
+            console.error(
+              "Worker game runner initialization failed:",
+              error,
+            );
+            throw error;
+          });
       } catch (error) {
         console.error("Failed to initialize game runner:", error);
         throw error;
