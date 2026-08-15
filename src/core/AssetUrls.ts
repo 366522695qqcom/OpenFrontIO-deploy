@@ -64,7 +64,13 @@ export function buildAssetUrl(
     return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${directUrl}` : directUrl;
   }
 
-  return `/${encodeAssetPath(normalizedPath)}`;
+  // Path not in the manifest (e.g. on-demand map binaries). Prepend baseUrl so
+  // it resolves to an absolute URL when one is provided — without this, Blob
+  // workers (which have no location origin) cannot resolve the root-relative
+  // result and fail with "Failed to parse URL". Same-origin callers keep the
+  // historical root-relative form (baseUrl is empty there).
+  const fallbackPath = `/${encodeAssetPath(normalizedPath)}`;
+  return baseUrl ? `${baseUrl.replace(/\/+$/, "")}${fallbackPath}` : fallbackPath;
 }
 
 declare global {
