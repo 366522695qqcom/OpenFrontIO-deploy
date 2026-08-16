@@ -487,13 +487,16 @@ export class UnitLayer {
     const atlasCol = STRUCTURE_ATLAS_COL[unit.unitType];
 
     if (atlas !== null && atlasCol !== undefined) {
-      // Colored seedream building icon, clipped to the structure silhouette,
-      // with a player-color border ring for ownership (mirrors the GPU path).
+      // Player-colored shape backing (national color) with the white
+      // build-list icon glyph drawn on top, plus a player-color border ring.
+      // The atlas RGB is pure white; alpha carries the icon mask.
       ctx.save();
       if (unit.underConstruction) ctx.globalAlpha = 0.35;
-      ctx.strokeStyle = highlighted ? rgbCss(color) : rgbaCss(color, 0.85);
-      ctx.lineWidth = Math.max(1 / zoom, r * 0.12);
+      // 1) Player-color shape backing.
       this.structureShapePath(ctx, unit.unitType, cx, cy, r);
+      ctx.fillStyle = highlighted ? rgbaCss(color, 0.9) : rgbaCss(color, 0.7);
+      ctx.fill();
+      // 2) White icon overlay (atlas alpha mask, RGB all-white).
       ctx.clip();
       ctx.drawImage(
         atlas,
@@ -507,7 +510,9 @@ export class UnitLayer {
         r * 2,
       );
       ctx.restore();
-      // Re-stroke the silhouette so the border ring is crisp over the icon.
+      // 3) Player-color border ring so the silhouette is crisp over the icon.
+      ctx.strokeStyle = highlighted ? rgbCss(color) : rgbaCss(color, 0.85);
+      ctx.lineWidth = Math.max(1 / zoom, r * 0.12);
       this.structureShapePath(ctx, unit.unitType, cx, cy, r);
       ctx.stroke();
     } else {

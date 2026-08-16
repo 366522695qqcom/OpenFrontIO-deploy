@@ -186,27 +186,24 @@ void main() {
     }
   }
 
-  // Sample the colored icon from the atlas (RGB content, opaque alpha).
-  // The image is clipped to its atlas column by inBounds (clamped pixels
-  // would otherwise repeat the edge) and to the shape interior by borderMask.
-  vec3 iconRGB = vec3(0.0);
+  // Sample the white build-list icon from the atlas as an alpha mask (the
+  // atlas RGB is pure white; the icon glyph is carried by alpha). Clipped to
+  // its atlas column by inBounds and to the shape interior by borderMask.
+  float iconAlpha = 0.0;
   {
     float colStart = vAtlasIdx / float(ATLAS_COLS);
     float colEnd = (vAtlasIdx + 1.0) / float(ATLAS_COLS);
     vec2 safeUV = vec2(clamp(vAtlasUV.x, colStart, colEnd), clamp(vAtlasUV.y, 0.0, 1.0));
-    iconRGB = texture(uAtlas, safeUV).rgb;
+    iconAlpha = texture(uAtlas, safeUV).a;
     float inBounds = step(colStart, vAtlasUV.x) * step(vAtlasUV.x, colEnd)
                    * step(0.0, vAtlasUV.y) * step(vAtlasUV.y, 1.0);
-    iconRGB *= inBounds;
+    iconAlpha *= inBounds;
   }
-  // The colored icon is always shown (no zoom-out dot fallback): the detailed
-  // AI image must stay visible at every zoom, with the border ring carrying
-  // ownership color. Zoom scaling is handled by the vertex shader.
-  float iconFade = 1.0;
 
-  // Interior: the detailed AI image, ringed by the player's border color so
-  // the structure's ownership stays readable at every zoom level.
-  vec3 interiorRGB = mix(fillColor.rgb, iconRGB, iconFade);
+  // Interior: the player-colored shape (national color) with the white icon
+  // glyph drawn on top, so ownership stays readable and the build-list icon
+  // matches the build menu. Zoom scaling is handled by the vertex shader.
+  vec3 interiorRGB = mix(fillColor.rgb, uIconColor.rgb, iconAlpha);
   vec3 ringColor = borderColor.rgb;
   if (effectActive) {
     ringColor = mix(ringColor, effectColor, 0.7);
