@@ -199,12 +199,13 @@ void main() {
                    * step(0.0, vAtlasUV.y) * step(vAtlasUV.y, 1.0);
     iconRGB *= inBounds;
   }
-  // Fade the icon in smoothly as the camera zooms in (dot -> icon transition).
-  float iconFade = smoothstep(uDotsThreshold, uDotsThreshold + 0.2, vZoom);
+  // The colored icon is always shown (no zoom-out dot fallback): the detailed
+  // AI image must stay visible at every zoom, with the border ring carrying
+  // ownership color. Zoom scaling is handled by the vertex shader.
+  float iconFade = 1.0;
 
-  // Interior: player-colored dot while zoomed out, detailed AI image once
-  // zoomed in. The border ring keeps the (darkened) player color so the
-  // structure's ownership stays readable at every zoom level.
+  // Interior: the detailed AI image, ringed by the player's border color so
+  // the structure's ownership stays readable at every zoom level.
   vec3 interiorRGB = mix(fillColor.rgb, iconRGB, iconFade);
   vec3 ringColor = borderColor.rgb;
   if (effectActive) {

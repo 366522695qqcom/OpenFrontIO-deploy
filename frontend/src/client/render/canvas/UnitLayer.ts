@@ -7,6 +7,7 @@
 // conquest FX, dead-unit sprites, player skins, map-layer PNGs) are no-ops —
 // graceful degradation so the game stays playable without WebGL.
 
+import { assetUrl } from "../../../core/AssetUrls";
 import type { MapLayer } from "../../../core/game/TerrainMapLoader";
 import type { SpiralRibbon } from "../frame/SpiralTrails";
 import type { SpawnCenter } from "../gl/passes/SpawnOverlayPass";
@@ -63,6 +64,22 @@ const SHAPE_SCALES: Record<string, number> = {
   "SAM Launcher": 1.4,
   "Missile Silo": 1.55,
 };
+
+/**
+ * Structure icon atlas (same icon-atlas.png the GPU StructurePass samples).
+ * Column order must match StructurePass.STRUCTURE_ORDER:
+ *   0=City, 1=Port, 2=Factory, 3=DefensePost, 4=SAMLauncher, 5=MissileSilo
+ */
+const STRUCTURE_ATLAS_URL = assetUrl("atlases/icon-atlas.png");
+const STRUCTURE_ATLAS_COL: Record<string, number> = {
+  [UT_CITY]: 0,
+  [UT_PORT]: 1,
+  [UT_FACTORY]: 2,
+  [UT_DEFENSE_POST]: 3,
+  [UT_SAM_LAUNCHER]: 4,
+  [UT_MISSILE_SILO]: 5,
+};
+const ATLAS_CELL = 64; // atlas cell size in px (6 columns × 64px)
 
 /** Player palette row stride — owners 0..PALETTE_SIZE-1 are addressable. */
 const PALETTE_SIZE = getPaletteSize();
@@ -139,6 +156,8 @@ export class UnitLayer {
 
   private units = new Map<number, UnitState>();
   private structures = new Map<number, UnitState>();
+  /** Structure icon atlas image (loaded async; null until ready). */
+  private structureAtlas: HTMLImageElement | null = null;
   private names = new Map<string, NameEntry>();
   private displayNames = new Map<string, string>();
   private players = new Map<number, PlayerState>();
@@ -168,6 +187,21 @@ export class UnitLayer {
   constructor(mapW: number = 0, mapH: number = 0) {
     this.mapW = mapW;
     this.mapH = mapH;
+    this.loadStructureAtlas();
+  }
+
+  /**
+   * Load the structure icon atlas used by the GPU path so the CPU fallback
+   * renders the same seedream colored building icons. Failure is silent —
+   * drawing falls back to the plain geometric silhouettes.
+   */
+  private loadStructureAtlas(): void {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      this.structureAtlas = img;
+    };
+    img.src = STRUCTURE_ATLAS_URL;
   }
 
   // ---------------------------------------------------------------------------
@@ -449,16 +483,45 @@ export class UnitLayer {
     const color = this.playerColor(unit.ownerID);
     const highlighted =
       this.highlightOwner !== 0 && unit.ownerID === this.highlightOwner;
+    const atlas = this.structureAtlas;
+    const atlasCol = STRUCTURE_ATLAS_COL[unit.unitType];
 
-    ctx.lineWidth = 1 / zoom;
-    if (unit.underConstruction) {
-      ctx.fillStyle = rgbaCss(color, 0.35);
-      ctx.strokeStyle = rgbCss(color);
+    if (atlas !== null && atlasCol !== undefined) {
+      // Colored seedream building icon, clipped to the structure silhouette,
+      // with a player-color border ring for ownership (mirrors the GPU path).
+      ctx.save();
+      if (unit.underConstruction) ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = highlighted ? rgbCss(color) : rgbaCss(color, 0.85);
+      ctx.lineWidth = Math.max(1 / zoom, r * 0.12);
+      this.structureShapePath(ctx, unit.unitType, cx, cy, r);
+      ctx.clip();
+      ctx.drawImage(
+        atlas,
+        atlasCol * ATLAS_CELL,
+        0,
+        ATLAS_CELL,
+        ATLAS_CELL,
+        cx - r,
+        cy - r,
+        r * 2,
+        r * 2,
+      );
+      ctx.restore();
+      // Re-stroke the silhouette so the border ring is crisp over the icon.
+      this.structureShapePath(ctx, unit.unitType, cx, cy, r);
+      ctx.stroke();
     } else {
-      ctx.fillStyle = highlighted ? rgbaCss(color, 1) : rgbCss(color);
-      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      // Atlas not ready (or unknown type): plain geometric fallback.
+      ctx.lineWidth = 1 / zoom;
+      if (unit.underConstruction) {
+        ctx.fillStyle = rgbaCss(color, 0.35);
+        ctx.strokeStyle = rgbCss(color);
+      } else {
+        ctx.fillStyle = highlighted ? rgbaCss(color, 1) : rgbCss(color);
+        ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      }
+      this.drawStructureShape(ctx, unit.unitType, cx, cy, r);
     }
-    this.drawStructureShape(ctx, unit.unitType, cx, cy, r);
 
     // Level pips when zoomed in enough to see them.
     if (unit.level > 0 && zoom >= 4) {
@@ -473,6 +536,75 @@ export class UnitLayer {
         ctx.arc(startX + i * spacing, py, pipR, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+  }
+
+  /**
+   * Trace a regular polygon as the current path (no fill/stroke). First
+   * vertex at `startAngle` (radians, canvas +Y-down convention).
+   */
+  private regularPolygon(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    r: number,
+    n: number,
+    startAngle: number,
+  ): void {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = startAngle + (i * 2 * Math.PI) / n;
+      const px = cx + r * Math.cos(a);
+      const py = cy + r * Math.sin(a);
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+  }
+
+  /**
+   * Build the per-type structure silhouette path (matching the GPU
+   * StructurePass shapeSDF so both renderers show the same outline):
+   *   City          — circle
+   *   Port          — pentagon (vertex up)
+   *   Factory       — hexagon (flat top)
+   *   Defense Post  — octagon (flat top)
+   *   SAM Launcher  — square
+   *   Missile Silo  — triangle (vertex up)
+   * Unknown types fall back to the City circle.
+   */
+  private structureShapePath(
+    ctx: CanvasRenderingContext2D,
+    unitType: string,
+    cx: number,
+    cy: number,
+    r: number,
+  ): void {
+    switch (unitType) {
+      case UT_PORT:
+        this.regularPolygon(ctx, cx, cy, r, 5, -Math.PI / 2);
+        break;
+      case UT_FACTORY:
+        this.regularPolygon(ctx, cx, cy, r, 6, 0);
+        break;
+      case UT_DEFENSE_POST:
+        this.regularPolygon(ctx, cx, cy, r, 8, 0);
+        break;
+      case UT_SAM_LAUNCHER:
+        ctx.beginPath();
+        ctx.rect(cx - r, cy - r, r * 2, r * 2);
+        break;
+      case UT_MISSILE_SILO:
+        this.regularPolygon(ctx, cx, cy, r, 3, -Math.PI / 2);
+        break;
+      case UT_CITY:
+      default:
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        break;
     }
   }
 
