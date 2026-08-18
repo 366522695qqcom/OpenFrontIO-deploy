@@ -12,7 +12,9 @@ import type { MapLayer } from "../../../core/game/TerrainMapLoader";
 import type { SpiralRibbon } from "../frame/SpiralTrails";
 import type { SpawnCenter } from "../gl/passes/SpawnOverlayPass";
 import type { AttackTroopLabel } from "../gl/passes/WorldTextPass";
+import type { RenderSettings } from "../gl/RenderSettings";
 import { getPaletteSize } from "../gl/utils/ColorUtils";
+import { OWNER_MASK } from "../gl/utils/TileCodec";
 import type {
   AttackRingInput,
   BonusEvent,
@@ -55,6 +57,32 @@ const NAME_SCALE_FACTOR = 0.4;
 const ATTACK_RING_SCREEN_PX = 30;
 const SPAWN_SELF_RADIUS = 30;
 const SPAWN_MATE_RADIUS = 14;
+
+/**
+ * Fallback railroad tunables used when no RenderSettings is routed in (only
+ * legacy 2-arg constructions, e.g. tests, hit this). Mirrors the `railroad`
+ * block of render-settings.json; only the railroad section is ever read here.
+ */
+const RAIL_FALLBACK_SETTINGS = {
+  railroad: {
+    railMinZoom: 3,
+    railFadeRange: 2,
+    railDetailZoom: 6,
+    railAlpha: 1,
+    railThickness: 1,
+  },
+} as RenderSettings;
+
+/** One railroad-construction dust particle (world coords + ms lifetime). */
+interface RailDustParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  born: number;
+  lifeMs: number;
+  radius: number;
+}
 
 const SHAPE_SCALES: Record<string, number> = {
   City: 1,
@@ -153,6 +181,7 @@ function cubicBez(
 export class UnitLayer {
   private mapW: number;
   private mapH: number;
+  private settings: RenderSettings;
 
   private units = new Map<number, UnitState>();
   private structures = new Map<number, UnitState>();
@@ -170,6 +199,20 @@ export class UnitLayer {
   // are read from here so CPU-rendered units/structures match the GPU path.
   private paletteData: Float32Array | null = null;
 
+  /** Full-map tile code mirror (Uint16Array) for rail owner lookup. */
+  private tileState: Uint16Array | null = null;
+  /**
+   * Caller-owned railroad state (Uint8Array, value per tile: 0 = none,
+   * 1-6 = rail type). The array is mutated in place each tick by the caller,
+   * so this layer keeps the reference (no copy).
+   */
+  private railroadState: Uint8Array | null = null;
+  private railroadDirty = false;
+  /** Local player's rail color override (RGB 0-255); null = use palette. */
+  private localRailColor: RGB | null = null;
+  private railDust: RailDustParticle[] = [];
+  private lastDustTime = 0;
+
   private attackRings: AttackRingInput[] = [];
   private nukeTelegraphs: NukeTelegraphData[] = [];
   private nukeTrajectory: NukeTrajectoryData | null = null;
@@ -184,9 +227,14 @@ export class UnitLayer {
 
   private colorCache = new Map<number, RGB>();
 
-  constructor(mapW: number = 0, mapH: number = 0) {
+  constructor(
+    mapW: number = 0,
+    mapH: number = 0,
+    settings: RenderSettings = RAIL_FALLBACK_SETTINGS,
+  ) {
     this.mapW = mapW;
     this.mapH = mapH;
+    this.settings = settings;
     this.loadStructureAtlas();
   }
 
@@ -275,7 +323,26 @@ export class UnitLayer {
   applyConquestEvents(_events: ConquestFx[]): void {}
   applyBonusEvents(_events: BonusEvent[]): void {}
   updateSpiralRibbons(_ribbons: readonly SpiralRibbon[]): void {}
-  applyRailroadDust(_tileRefs: number[]): void {}
+  applyRailroadDust(tileRefs: number[]): void {
+    const now = performance.now();
+    for (const ref of tileRefs) {
+      if (Math.random() > 0.33) continue;
+      const x = ref % this.mapW;
+      const y = (ref - x) / this.mapW;
+      const count = 3 + Math.floor(Math.random() * 3); // 3-5 particles
+      for (let i = 0; i < count; i++) {
+        this.railDust.push({
+          x: x + 0.5 + (Math.random() - 0.5) * 0.4,
+          y: y + 0.5 + (Math.random() - 0.5) * 0.4,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: (Math.random() - 0.5) * 0.4,
+          born: now,
+          lifeMs: 400 + Math.random() * 300,
+          radius: 0.08 + Math.random() * 0.08,
+        });
+      }
+    }
+  }
   updateSmallPlayerGlow(_set: Uint8Array | null): void {}
   setSAMAllianceClusters(_clusters: Map<number, number>): void {}
 
@@ -290,7 +357,23 @@ export class UnitLayer {
   setPlayerSkin(_smallID: number, _url: string): void {}
   initSkinAtlas(_urls: readonly string[]): void {}
   setPlayerSpawn(_smallID: number, _x: number, _y: number): void {}
-  uploadRailroadState(_data: Uint8Array): void {}
+
+  /**
+   * Store the full-map tile state (owner lookup for rail colors). The array is
+   * caller-owned; the same instance is re-uploaded on every delta/full update.
+   */
+  setTileState(tileState: Uint16Array): void {
+    this.tileState = tileState;
+  }
+
+  /**
+   * Adopt the caller-owned railroad state (mutated in place each tick). Rails
+   * are re-read from the reference on every draw, so no copy is needed.
+   */
+  uploadRailroadState(data: Uint8Array): void {
+    this.railroadState = data;
+    this.railroadDirty = true;
+  }
 
   // ---------------------------------------------------------------------------
   // Render-affecting setters
@@ -310,7 +393,17 @@ export class UnitLayer {
     this.colorCache.clear();
   }
 
-  setLocalRailColor(_r: number, _g: number, _b: number): void {}
+  /**
+   * Override the rail color for the local player's rails (RGB 0-1 floats,
+   * matching the GPU path's setLocalRailColor). Stored as 0-255 RGB.
+   */
+  setLocalRailColor(r: number, g: number, b: number): void {
+    this.localRailColor = [
+      Math.round(r * 255),
+      Math.round(g * 255),
+      Math.round(b * 255),
+    ];
+  }
 
   setAltView(active: boolean): void {
     this.altView = active;
@@ -365,6 +458,35 @@ export class UnitLayer {
     return rgb;
   }
 
+  /**
+   * Rail color for a tile's owner. Rails read the palette's BORDER row
+   * (matching GPU `texture(uPalette, vec2((owner+0.5)/PALETTE_SIZE, 0.75))`),
+   * except the local player's rails (overridden via {@link setLocalRailColor})
+   * and owner 0 (neutral gray, 0.75×255). Falls back to the HSL-hash fill
+   * color when the palette lacks the owner.
+   */
+  private railColor(ownerID: number): RGB {
+    if (ownerID === this.localPlayerID && this.localRailColor !== null) {
+      return this.localRailColor;
+    }
+    const palette = this.paletteData;
+    if (
+      palette !== null &&
+      ownerID > 0 &&
+      ownerID < PALETTE_SIZE &&
+      palette.length >= (PALETTE_SIZE + ownerID + 1) * 4
+    ) {
+      const base = (PALETTE_SIZE + ownerID) * 4;
+      return [
+        Math.round(palette[base] * 255),
+        Math.round(palette[base + 1] * 255),
+        Math.round(palette[base + 2] * 255),
+      ];
+    }
+    if (ownerID === 0) return [191, 191, 191];
+    return this.playerColor(ownerID);
+  }
+
   /** Structure icon radius in world tiles (mirrors StructurePass vert shader). */
   private structureRadius(unit: UnitState, zoom: number): number {
     const shapeScale = SHAPE_SCALES[unit.unitType] ?? 1;
@@ -410,7 +532,10 @@ export class UnitLayer {
     const maxWY = camera.y + halfVpH;
 
     this.drawSpawnOverlay(ctx, zoom);
+    this.drawRailroads(ctx, zoom, minWX, maxWX, minWY, maxWY);
     this.drawStructuresAndUnits(ctx, zoom, minWX, maxWX, minWY, maxWY);
+    this.advanceRailDust();
+    this.drawRailroadDust(ctx, zoom, minWX, maxWX, minWY, maxWY);
     this.drawAttackRings(ctx, zoom);
     this.drawNukeTelegraphs(ctx, zoom);
     this.drawNukeTrajectory(ctx, zoom);
@@ -439,6 +564,163 @@ export class UnitLayer {
       ctx.fill();
       ctx.stroke();
     }
+  }
+
+  /**
+   * Draw railroad tracks in world coords (below units/structures, matching the
+   * GPU layer order). One stroked polyline per rail tile, colored by the tile
+   * owner (border row of the palette). Fades out as zoom drops below
+   * `railMinZoom` (mirrors RailroadPass.draw's zoom fade).
+   *
+   * Rail types (from railroad.frag.glsl `railLineDist`), tile-local coords:
+   *   1 = Vertical, 2 = Horizontal, 3 = TopLeft, 4 = TopRight,
+   *   5 = BottomLeft, 6 = BottomRight.
+   */
+  private drawRailroads(
+    ctx: CanvasRenderingContext2D,
+    zoom: number,
+    minWX: number,
+    maxWX: number,
+    minWY: number,
+    maxWY: number,
+  ): void {
+    const rs = this.settings.railroad;
+    const fadeRange = Math.max(rs.railFadeRange, 0);
+    const fadeStart = rs.railMinZoom - fadeRange;
+    const fade =
+      fadeRange <= 0
+        ? zoom >= rs.railMinZoom
+          ? 1
+          : 0
+        : Math.min(1, Math.max(0, (zoom - fadeStart) / fadeRange));
+    if (fade <= 0) return;
+
+    const state = this.railroadState;
+    const tileState = this.tileState;
+    const mapW = this.mapW;
+    const mapH = this.mapH;
+    if (state === null || tileState === null || mapW <= 0 || mapH <= 0) return;
+
+    const minTx = Math.max(0, Math.floor(minWX));
+    const maxTx = Math.min(mapW - 1, Math.ceil(maxWX) - 1);
+    const minTy = Math.max(0, Math.floor(minWY));
+    const maxTy = Math.min(mapH - 1, Math.ceil(maxWY) - 1);
+    if (minTx > maxTx || minTy > maxTy) return;
+
+    const alpha = fade * rs.railAlpha;
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(0.3, rs.railThickness);
+
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        const t = ty * mapW + tx;
+        const rail = state[t];
+        if (rail < 1 || rail > 6) continue;
+        const owner = tileState[t] & OWNER_MASK;
+        const x0 = tx;
+        const x1 = tx + 1;
+        const y0 = ty;
+        const y1 = ty + 1;
+        const cx = tx + 0.5;
+        const cy = ty + 0.5;
+        ctx.strokeStyle = rgbCss(this.railColor(owner));
+        ctx.beginPath();
+        switch (rail) {
+          case 1: // Vertical
+            ctx.moveTo(cx, y0);
+            ctx.lineTo(cx, y1);
+            break;
+          case 2: // Horizontal
+            ctx.moveTo(x0, cy);
+            ctx.lineTo(x1, cy);
+            break;
+          case 3: // TopLeft
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx, y0);
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x0, cy);
+            break;
+          case 4: // TopRight
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx, y0);
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x1, cy);
+            break;
+          case 5: // BottomLeft
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx, y1);
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x0, cy);
+            break;
+          default: // 6 = BottomRight
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx, y1);
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(x1, cy);
+            break;
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Advance railroad dust particles and prune dead ones (once per frame). */
+  private advanceRailDust(): void {
+    const particles = this.railDust;
+    if (particles.length === 0) return;
+    const now = performance.now();
+    let dtMs = 16;
+    if (this.lastDustTime !== 0) {
+      dtMs = Math.min(100, Math.max(0, now - this.lastDustTime));
+    }
+    this.lastDustTime = now;
+    const dt = dtMs / 1000;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (now - p.born >= p.lifeMs) {
+        particles[i] = particles[particles.length - 1];
+        particles.pop();
+      }
+    }
+  }
+
+  /**
+   * Draw railroad-construction dust as small gray-white circles that shrink
+   * and fade as their lifetime runs out. World-coord culling keeps the cost
+   * proportional to the viewport.
+   */
+  private drawRailroadDust(
+    ctx: CanvasRenderingContext2D,
+    zoom: number,
+    minWX: number,
+    maxWX: number,
+    minWY: number,
+    maxWY: number,
+  ): void {
+    const particles = this.railDust;
+    if (particles.length === 0) return;
+    const now = performance.now();
+    const margin = 1; // world-tile cull margin
+    ctx.save();
+    ctx.fillStyle = "#d8d8d8";
+    for (const p of particles) {
+      if (p.x < minWX - margin || p.x > maxWX + margin) continue;
+      if (p.y < minWY - margin || p.y > maxWY + margin) continue;
+      const lifeFrac = 1 - (now - p.born) / p.lifeMs;
+      if (lifeFrac <= 0) continue;
+      ctx.globalAlpha = 0.5 * lifeFrac;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius * (0.5 + 0.5 * lifeFrac), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawStructuresAndUnits(
@@ -892,5 +1174,11 @@ export class UnitLayer {
     this.spawnCenters = [];
     this.colorCache.clear();
     this.paletteData = null;
+    this.tileState = null;
+    this.railroadState = null;
+    this.railroadDirty = false;
+    this.localRailColor = null;
+    this.railDust = [];
+    this.lastDustTime = 0;
   }
 }

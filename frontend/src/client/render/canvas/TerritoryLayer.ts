@@ -69,6 +69,11 @@ export class TerritoryLayer {
   private readonly dirtyTiles = new Set<number>();
   private dirtyAll = false;
 
+  /** Active same-owner defense posts (tile coords + owner). */
+  private defensePosts: { x: number; y: number; ownerID: number }[] = [];
+  /** Per-tile defense coverage flag (1 = tile is defended by a same-owner post). */
+  private defenseCoverage: Uint8Array;
+
   // Relationship matrix (size×size, indexed [ownerA, ownerB]) — values are
   // 0=neutral, 1=friendly, 2=embargo (see Affiliation.ts / BorderComputePass).
   // Stored for API parity with the GPU path; the CPU fallback's 3-state border
@@ -88,6 +93,7 @@ export class TerritoryLayer {
     this.terrainSource = terrainSource;
     this.settings = settings;
     this.tileMirror = new Uint16Array(mapW * mapH);
+    this.defenseCoverage = new Uint8Array(mapW * mapH);
 
     const terrain = this.createOffscreen(mapW, mapH);
     this.terrainCanvas = terrain.canvas;
@@ -215,6 +221,18 @@ export class TerritoryLayer {
     this.markAllDirty();
   }
 
+  /**
+   * Replace the set of defense posts and recompute per-tile coverage (same
+   * owner + within `defensePostRange`, matching the GPU DefenseCoveragePass
+   * circle stamp). A post appearing/disappearing can flip its whole circle, so
+   * the full map is recomputed and re-flushed.
+   */
+  updateDefensePosts(posts: { x: number; y: number; ownerID: number }[]): void {
+    this.defensePosts = posts;
+    this.recomputeCoverageAll();
+    this.markAllDirty();
+  }
+
   /** Re-bake only the affected terrain texels (e.g. water nukes). */
   applyTerrainDelta(refs: readonly number[], terrainBytes: Uint8Array): void {
     const colors = this.colorsFromSettings();
@@ -242,6 +260,62 @@ export class TerritoryLayer {
   private markAllDirty(): void {
     this.dirtyAll = true;
     this.dirtyTiles.clear();
+  }
+
+  /**
+   * True when tile `t` is a territory border (its owner differs from any
+   * 4-neighbour). Border tiles are skipped by the defense fill darken (they
+   * get the checkerboard overlay in writeBorderPixel instead) — matching the
+   * GPU territory.frag.glsl `uBorderTex` test.
+   */
+  private isBorderTile(t: number): boolean {
+    const mirror = this.tileMirror;
+    const owner = mirror[t] & OWNER_MASK;
+    if (owner === 0) return false;
+    const mapW = this.mapW;
+    const mapH = this.mapH;
+    const tx = t % mapW;
+    const ty = (t / mapW) | 0;
+    if (tx > 0 && (mirror[t - 1] & OWNER_MASK) !== owner) return true;
+    if (tx < mapW - 1 && (mirror[t + 1] & OWNER_MASK) !== owner) return true;
+    if (ty > 0 && (mirror[t - mapW] & OWNER_MASK) !== owner) return true;
+    if (ty < mapH - 1 && (mirror[t + mapW] & OWNER_MASK) !== owner) return true;
+    return false;
+  }
+
+  /**
+   * Recompute the defense-coverage flag for one tile: covered iff a same-owner
+   * defense post is within `defensePostRange` (squared distance), mirroring the
+   * GPU DefenseCoveragePass circle stamp. Coverage depends only on this tile's
+   * own owner, so a single tile's recompute is always sufficient.
+   */
+  private recomputeCoverageForTile(t: number): void {
+    const mirror = this.tileMirror;
+    const owner = mirror[t] & OWNER_MASK;
+    let covered = false;
+    if (owner !== 0) {
+      const mapW = this.mapW;
+      const tx = t % mapW;
+      const ty = (t / mapW) | 0;
+      const range = this.settings.mapOverlay.defensePostRange;
+      const rangeSq = range * range;
+      for (const post of this.defensePosts) {
+        if (post.ownerID !== owner) continue;
+        const dx = tx - post.x;
+        const dy = ty - post.y;
+        if (dx * dx + dy * dy <= rangeSq) {
+          covered = true;
+          break;
+        }
+      }
+    }
+    this.defenseCoverage[t] = covered ? 1 : 0;
+  }
+
+  /** Recompute defense coverage for the whole map (posts changed). */
+  private recomputeCoverageAll(): void {
+    const n = this.mapW * this.mapH;
+    for (let t = 0; t < n; t++) this.recomputeCoverageForTile(t);
   }
 
   /** Write the fill pixel for one tile into territoryImageData. */
@@ -272,6 +346,15 @@ export class TerritoryLayer {
       r = r * 0.5 + FALLOUT_TINT[0] * 0.5;
       g = g * 0.5 + FALLOUT_TINT[1] * 0.5;
       b = b * 0.5 + FALLOUT_TINT[2] * 0.5;
+    }
+    // Defense bonus: darken the fill on interior tiles defended by a same-owner
+    // post. Border tiles are skipped — they get the checkerboard overlay from
+    // writeBorderPixel instead (matches territory.frag.glsl uBorderTex test).
+    if (this.defenseCoverage[t] === 1 && !this.isBorderTile(t)) {
+      const darken = this.settings.mapOverlay.territoryDefenseDarken;
+      r = r * darken;
+      g = g * darken;
+      b = b * darken;
     }
     data[o4] = r;
     data[o4 + 1] = g;
@@ -348,6 +431,14 @@ export class TerritoryLayer {
         g = g * 0.5 + 255 * 0.5;
         b = b * 0.5 + 255 * 0.5;
       }
+      // Defense bonus: checkerboard darken on defended border tiles (applied
+      // AFTER the relation/highlight tint, matching border-stamp.frag.glsl).
+      if (this.defenseCoverage[t] === 1 && ((tx + ty) & 1) === 1) {
+        const darken = this.settings.mapOverlay.defenseCheckerDarken;
+        r = r * darken;
+        g = g * darken;
+        b = b * darken;
+      }
       data[o4] = r;
       data[o4 + 1] = g;
       data[o4 + 2] = b;
@@ -393,6 +484,12 @@ export class TerritoryLayer {
     } else {
       const dirty = this.dirtyTiles;
       for (const t of dirty) {
+        // A tile changing owner can flip its own defense-coverage flag
+        // (same-owner test), so re-derive it before writing the pixels.
+        // Coverage is per-tile (independent of neighbours), so one recompute
+        // per changed tile is sufficient — this mirrors the GPU path's
+        // per-tile markTileDirty semantics for the common combat-delta case.
+        this.recomputeCoverageForTile(t);
         this.writeFillPixel(t);
         expand(fb, t);
         // Border status of t and its 4-neighbours can change when t's owner
@@ -494,5 +591,7 @@ export class TerritoryLayer {
     this.relationsData = null;
     this.relationsSize = 0;
     this.localPlayerID = 0;
+    this.defensePosts = [];
+    this.defenseCoverage = new Uint8Array(0);
   }
 }
