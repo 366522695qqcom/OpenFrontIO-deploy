@@ -15,6 +15,7 @@ import {
   WorkerReady,
 } from "./IPCBridgeSchema";
 import { logger } from "./Logger";
+import { ServerEnv } from "./ServerEnv";
 
 // The game config advertised for a listed private lobby: everything the
 // host configured minus host-only fields. The server already rejects
@@ -91,6 +92,12 @@ export class WorkerLobbyService {
         this.sendMyLobbiesToMaster();
         break;
       case "createGame": {
+        if (!ServerEnv.multiplayerEnabled()) {
+          this.log.warn(
+            `Multiplayer disabled: rejecting createGame for ${msg.gameID}`,
+          );
+          return;
+        }
         if (this.gm.game(msg.gameID) !== null) {
           this.log.warn(`Game ${msg.gameID} already exists, skipping create`);
           return;

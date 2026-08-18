@@ -67,6 +67,7 @@ const locals = {
   serverHost: JSON.stringify(backendHost),
   apiBase: JSON.stringify(backendHost),
   instanceId: JSON.stringify("static"),
+  multiplayerEnabled: JSON.stringify(false),
   manifestHref: assetManifest["manifest.json"] ?? "/manifest.json",
   faviconHref: assetManifest["images/Favicon.svg"] ?? "/images/Favicon.svg",
   gameplayScreenshotUrl:

@@ -218,6 +218,11 @@ export class MasterLobbyService {
   }
 
   private async maybeScheduleLobby() {
+    // Multiplayer disabled: never schedule public games. Existing games are
+    // unaffected but no new lobbies are created.
+    if (!ServerEnv.multiplayerEnabled()) {
+      return;
+    }
     const lobbiesByType = this.getAllLobbies().games;
 
     // Scheduled types only: hosted lobbies are started by their host, never

@@ -126,6 +126,7 @@ export class GameModeSelector extends LitElement {
     const ffa = this.lobbies?.games?.["ffa"]?.[0];
     const teams = this.lobbies?.games?.["team"]?.[0];
     const special = this.lobbies?.games?.["special"]?.[0];
+    const multiplayerEnabled = ClientEnv.multiplayerEnabled();
 
     return html`
       <div class="flex flex-col gap-4 w-full px-4 sm:px-0 mx-auto pb-4 sm:pb-0">
@@ -138,24 +139,26 @@ export class GameModeSelector extends LitElement {
           )}
         </div>
         <!-- Create/ranked/join: mobile only, below solo -->
-        <div class="sm:hidden grid grid-cols-3 gap-4 h-14">
-          ${this.renderSmallActionCard(
-            translateText("main.create"),
-            this.openHostLobby,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-          )}
-          ${this.renderSmallActionCard(
-            translateText("mode_selector.ranked_title"),
-            this.openRankedMenu,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-          )}
-          ${this.renderSmallActionCard(
-            translateText("main.join"),
-            this.openJoinLobby,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-            this.hostedLobbyCount(),
-          )}
-        </div>
+        ${multiplayerEnabled
+          ? html`<div class="sm:hidden grid grid-cols-3 gap-4 h-14">
+              ${this.renderSmallActionCard(
+                translateText("main.create"),
+                this.openHostLobby,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+              )}
+              ${this.renderSmallActionCard(
+                translateText("mode_selector.ranked_title"),
+                this.openRankedMenu,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+              )}
+              ${this.renderSmallActionCard(
+                translateText("main.join"),
+                this.openJoinLobby,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+                this.hostedLobbyCount(),
+              )}
+            </div>`
+          : nothing}
         <!-- iOS Add to Home Screen banner -->
         <ios-add-to-home-screen-banner
           class="no-crazygames"
@@ -170,45 +173,47 @@ export class GameModeSelector extends LitElement {
                 class="w-24 h-24 border-[6px] border-blue-500/30 border-t-blue-500 rounded-full animate-spin"
               ></span>
             </div>`
-          : html`<div
-              class="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-4 sm:h-[min(24rem,40vh)]"
-            >
-              <!-- Left col: main card (desktop only) -->
-              ${ffa
-                ? html`<div class="hidden sm:block">
-                    ${this.renderLobbyCard(ffa, this.getLobbyTitle(ffa))}
-                  </div>`
-                : nothing}
-
-              <!-- Right col: special + teams (desktop only) -->
-              <div class="hidden sm:flex sm:flex-col sm:gap-4">
-                ${special
-                  ? html`<div class="flex-1 min-h-0">
-                      ${this.renderSpecialLobbyCard(special)}
-                    </div>`
-                  : nothing}
-                ${teams
-                  ? html`<div class="flex-1 min-h-0">
-                      ${this.renderLobbyCard(teams, this.getLobbyTitle(teams))}
-                    </div>`
-                  : nothing}
-              </div>
-
-              <!-- Mobile: special, ffa, teams inline -->
-              <div class="sm:hidden">
-                ${special ? this.renderSpecialLobbyCard(special) : nothing}
-              </div>
-              <div class="sm:hidden">
+          : multiplayerEnabled
+            ? html`<div
+                class="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-4 sm:h-[min(24rem,40vh)]"
+              >
+                <!-- Left col: main card (desktop only) -->
                 ${ffa
-                  ? this.renderLobbyCard(ffa, this.getLobbyTitle(ffa))
+                  ? html`<div class="hidden sm:block">
+                      ${this.renderLobbyCard(ffa, this.getLobbyTitle(ffa))}
+                    </div>`
                   : nothing}
-              </div>
-              <div class="sm:hidden">
-                ${teams
-                  ? this.renderLobbyCard(teams, this.getLobbyTitle(teams))
-                  : nothing}
-              </div>
-            </div>`}
+
+                <!-- Right col: special + teams (desktop only) -->
+                <div class="hidden sm:flex sm:flex-col sm:gap-4">
+                  ${special
+                    ? html`<div class="flex-1 min-h-0">
+                        ${this.renderSpecialLobbyCard(special)}
+                      </div>`
+                    : nothing}
+                  ${teams
+                    ? html`<div class="flex-1 min-h-0">
+                        ${this.renderLobbyCard(teams, this.getLobbyTitle(teams))}
+                      </div>`
+                    : nothing}
+                </div>
+
+                <!-- Mobile: special, ffa, teams inline -->
+                <div class="sm:hidden">
+                  ${special ? this.renderSpecialLobbyCard(special) : nothing}
+                </div>
+                <div class="sm:hidden">
+                  ${ffa
+                    ? this.renderLobbyCard(ffa, this.getLobbyTitle(ffa))
+                    : nothing}
+                </div>
+                <div class="sm:hidden">
+                  ${teams
+                    ? this.renderLobbyCard(teams, this.getLobbyTitle(teams))
+                    : nothing}
+                </div>
+              </div>`
+            : nothing}
 
         <!-- Solo: full width, desktop only -->
         <div class="hidden sm:block h-14">
@@ -219,24 +224,26 @@ export class GameModeSelector extends LitElement {
           )}
         </div>
         <!-- Bottom row: create + ranked + join (desktop only) -->
-        <div class="hidden sm:grid grid-cols-3 gap-4 h-14">
-          ${this.renderSmallActionCard(
-            translateText("main.create"),
-            this.openHostLobby,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-          )}
-          ${this.renderSmallActionCard(
-            translateText("mode_selector.ranked_title"),
-            this.openRankedMenu,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-          )}
-          ${this.renderSmallActionCard(
-            translateText("main.join"),
-            this.openJoinLobby,
-            "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
-            this.hostedLobbyCount(),
-          )}
-        </div>
+        ${multiplayerEnabled
+          ? html`<div class="hidden sm:grid grid-cols-3 gap-4 h-14">
+              ${this.renderSmallActionCard(
+                translateText("main.create"),
+                this.openHostLobby,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+              )}
+              ${this.renderSmallActionCard(
+                translateText("mode_selector.ranked_title"),
+                this.openRankedMenu,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+              )}
+              ${this.renderSmallActionCard(
+                translateText("main.join"),
+                this.openJoinLobby,
+                "bg-surface hover:brightness-[1.08] active:brightness-[0.95] hover:scale-105 hover:shadow-[var(--shadow-action-card-hover)]",
+                this.hostedLobbyCount(),
+              )}
+            </div>`
+          : nothing}
       </div>
     `;
   }
