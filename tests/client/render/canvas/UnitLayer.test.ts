@@ -119,4 +119,75 @@ describe("UnitLayer", () => {
 
     layer.dispose();
   });
+
+  it("uploads railroad state and draws rails without throwing", () => {
+    const layer = new UnitLayer(3, 3);
+    layer.setPalette(buildPalette());
+    // All tiles owned by player 1 (rail owner lookup reads this).
+    layer.setTileState(new Uint16Array([1, 1, 1, 1, 1, 1, 1, 1, 1]));
+    // Rail type 1 (Vertical) on tile 0, nothing elsewhere.
+    layer.uploadRailroadState(new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0]));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 300;
+    canvas.height = 300;
+    const ctx = canvas.getContext("2d")!;
+
+    // Zoomed in (>= railMinZoom): rails are actually stroked.
+    expect(() =>
+      layer.draw(ctx, { x: 1.5, y: 1.5, zoom: 8 }),
+    ).not.toThrow();
+    // Zoomed out below railMinZoom - railFadeRange: fade clamps to 0 and the
+    // railroad pass bails out early — must not throw either.
+    expect(() =>
+      layer.draw(ctx, { x: 1.5, y: 1.5, zoom: 0.5 }),
+    ).not.toThrow();
+
+    layer.dispose();
+  });
+
+  it("rail color uses local player override and palette border row", () => {
+    const layer = new UnitLayer(3, 3);
+    const railColor = (id: number) =>
+      (
+        layer as unknown as {
+          railColor: (id: number) => [number, number, number];
+        }
+      ).railColor(id);
+
+    // Border row (PALETTE_SIZE + owner) of owner 1 → opaque green.
+    const palette = new Float32Array(PALETTE_SIZE * 2 * 4);
+    const base = (PALETTE_SIZE + 1) * 4;
+    palette[base] = 0.0;
+    palette[base + 1] = 1.0;
+    palette[base + 2] = 0.0;
+    palette[base + 3] = 1.0;
+    layer.setPalette(palette);
+    expect(railColor(1)).toEqual([0, 255, 0]);
+
+    // The local player's override (RGB 0-1 floats) wins over the palette.
+    layer.setLocalPlayerID(1);
+    layer.setLocalRailColor(1, 0.5, 0);
+    expect(railColor(1)).toEqual([255, 128, 0]);
+
+    layer.dispose();
+  });
+
+  it("applyRailroadDust spawns particles and advancing does not throw", () => {
+    const layer = new UnitLayer(3, 3);
+    // May spawn dust on a ~33% subset; exact counts are randomized, so only
+    // assert that drawing (advance + draw) is safe.
+    layer.applyRailroadDust([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 300;
+    canvas.height = 300;
+    const ctx = canvas.getContext("2d")!;
+
+    expect(() =>
+      layer.draw(ctx, { x: 1.5, y: 1.5, zoom: 8 }),
+    ).not.toThrow();
+
+    layer.dispose();
+  });
 });

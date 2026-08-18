@@ -87,7 +87,7 @@ export class CanvasRenderer implements RendererBackend {
       terrainSource,
       settings,
     );
-    this.unitLayer = new UnitLayer(this.mapW, this.mapH);
+    this.unitLayer = new UnitLayer(this.mapW, this.mapH, settings);
     this.effectsPolicy = new EffectsPolicy(settings);
 
     this.startLoop();
@@ -121,6 +121,7 @@ export class CanvasRenderer implements RendererBackend {
     changedTiles: readonly number[],
   ): void {
     this.territoryLayer.updateTileState(tileState, changedTiles);
+    this.unitLayer.setTileState(tileState);
   }
 
   // TODO(canvas): implement trail state in Task 3
@@ -135,6 +136,7 @@ export class CanvasRenderer implements RendererBackend {
     _trailState: Uint16Array,
   ): void {
     this.territoryLayer.uploadFullTileState(tileState);
+    this.unitLayer.setTileState(tileState);
     // TODO(canvas): implement trail state in Task 3
   }
 
@@ -206,6 +208,20 @@ export class CanvasRenderer implements RendererBackend {
 
   updateStructures(units: Map<number, UnitState>): void {
     this.unitLayer.updateStructures(units);
+    // Defense coverage is stamped per same-owner post (mirrors the GPU
+    // Renderer.updateStructures post collection).
+    const posts: { x: number; y: number; ownerID: number }[] = [];
+    const w = this.mapW;
+    for (const u of units.values()) {
+      if (u.unitType === "Defense Post" && !u.underConstruction) {
+        posts.push({
+          x: u.pos % w,
+          y: (u.pos - (u.pos % w)) / w,
+          ownerID: u.ownerID,
+        });
+      }
+    }
+    this.territoryLayer.updateDefensePosts(posts);
   }
 
   applyDeadUnits(deadUnits: DeadUnitFx[]): void {
