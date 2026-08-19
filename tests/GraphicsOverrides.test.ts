@@ -253,9 +253,8 @@ describe("applyGraphicsOverrides", () => {
   });
 
   test("settings outside the name slice are untouched by name overrides", () => {
-    // Baseline is empty overrides (classic icons are opt-in, so the structure
-    // slice keeps its defaults), so name overrides should leave the non-name
-    // slices identical to it.
+    // Baseline is empty overrides (which apply the default classic structure),
+    // so name overrides should leave the non-name slices identical to it.
     const base = gen({});
     const s = gen({
       name: { nameScaleFactor: 0.6, darkNames: true },

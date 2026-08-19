@@ -41,6 +41,10 @@ declare global {
       // When set, getApiBase() targets https://<apiBase> instead of fabricating
       // an "api.<audience>" sub-subdomain that has no valid TLS certificate.
       apiBase?: string;
+      // Whether multiplayer (public/private/ranked games) is available. When
+      // absent, ClientEnv.multiplayerEnabled() defaults to enabled on the
+      // official web build and disabled on self-hosted deploys.
+      multiplayerEnabled?: boolean;
     };
   }
 }

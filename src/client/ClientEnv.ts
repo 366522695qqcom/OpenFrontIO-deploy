@@ -46,6 +46,7 @@ export class ClientEnv {
       // Absent on the web build (falls back to same-origin window.location).
       serverHost: bc.serverHost,
       apiBase: bc.apiBase,
+      multiplayerEnabled: bc.multiplayerEnabled,
     };
     return ClientEnv.values;
   }
@@ -131,6 +132,13 @@ export class ClientEnv {
   static isSelfHosted(): boolean {
     return ClientEnv.apiBaseHost() !== undefined;
   }
+  // Whether multiplayer (public/private/ranked games) is available. An
+  // explicit BOOTSTRAP_CONFIG value always wins; otherwise it defaults to
+  // enabled on the official web build and disabled on self-hosted deploys
+  // (which bake apiBase and lack the account/auth infrastructure).
+  static multiplayerEnabled(): boolean {
+    return ClientEnv.get().multiplayerEnabled ?? !ClientEnv.isSelfHosted();
+  }
   // Origin (scheme + host, no trailing slash) of the game server that hosts the
   // public-lobby and in-game WebSockets. The lobby-list and game sockets append
   // their own worker path (e.g. `/w0/lobbies`, `/w0`).
@@ -184,4 +192,5 @@ export interface ClientEnvValues {
   gitCommit: string;
   serverHost?: string;
   apiBase?: string;
+  multiplayerEnabled?: boolean;
 }
