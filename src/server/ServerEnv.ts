@@ -186,4 +186,10 @@ export class ServerEnv {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
   }
+  // Whether multiplayer (public/private/ranked games) is enabled. Self-hosted
+  // deploys set MULTIPLAYER_ENABLED=false to disable multiplayer while keeping
+  // the (singleplayer) game fully playable. Unset/any other value = enabled.
+  static multiplayerEnabled(): boolean {
+    return process.env.MULTIPLAYER_ENABLED !== "false";
+  }
 }

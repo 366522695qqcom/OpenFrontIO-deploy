@@ -29,6 +29,7 @@ import {
   invalidateUserMe,
   purchaseWithCurrency,
 } from "./Api";
+import { ClientEnv } from "./ClientEnv";
 import { showInGameAlert, showInGameConfirm } from "./InGameModal";
 import { isPlayingVerified } from "./UsernameInput";
 import { translateText } from "./Utils";
@@ -229,6 +230,11 @@ function simpleHash(str: string): string {
 export async function fetchCosmetics(): Promise<Cosmetics | null> {
   if (__cosmetics !== null) {
     return __cosmetics;
+  }
+  // Self-hosted backends serve no /cosmetics.json; return null without a
+  // failing request or console noise.
+  if (ClientEnv.isSelfHosted()) {
+    return null;
   }
   __cosmetics = (async () => {
     try {

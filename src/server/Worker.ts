@@ -184,6 +184,15 @@ export async function startWorker() {
         .status(400)
         .json({ error: "Cannot create public games via this endpoint" });
     }
+    // Multiplayer disabled: only singleplayer-typed configs are accepted (the
+    // backend never hosts singleplayer games, so this rejects all game creation
+    // when the switch is off).
+    if (
+      !ServerEnv.multiplayerEnabled() &&
+      gc?.gameType !== GameType.Singleplayer
+    ) {
+      return res.status(403).json({ error: "Multiplayer disabled" });
+    }
 
     // Reuse-lobby flow: ?previous=<gameID> marks this creation as the successor
     // of a finished private game, so its remaining players get told the new id
@@ -568,8 +577,7 @@ export async function startWorker() {
         let friends: string[] = [];
         let ownedClanTags: string[] = [];
         let accountUsername:
-          | { username?: string | null; usernameStatus?: string }
-          | undefined;
+          { username?: string | null; usernameStatus?: string } | undefined;
 
         const allowedFlares = ServerEnv.allowedFlares();
         if (claims === null) {
