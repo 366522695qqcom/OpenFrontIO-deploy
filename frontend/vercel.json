@@ -6,7 +6,7 @@
   "outputDirectory": "static",
   "headers": [
     {
-      "source": "/",
+      "source": "/(index.html)?",
       "headers": [
         {
           "key": "Cache-Control",
