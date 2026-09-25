@@ -62,17 +62,17 @@
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.16",
     "vite-plugin-html": "^3.2.2",
-    "vitest": "^4.1.10",
+    "vitest": "^5.0.1",
     "vitest-canvas-mock": "^1.1.4"
   },
   "dependencies": {
-    "colord": "^2.9.3",
-    "dompurify": "^3.4.12",
+    "colord": "^2.9.4",
+    "dompurify": "^3.4.13",
     "howler": "^2.2.4",
     "intl-messageformat": "^11.2.3",
     "jose": "^6.2.3",
     "lil-gui": "^0.21.0",
-    "nanoid": "^5.1.11",
+    "nanoid": "^5.1.16",
     "zod": "^4.4.2"
   },
   "type": "module"
